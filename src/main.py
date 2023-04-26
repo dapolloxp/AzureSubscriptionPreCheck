@@ -4,6 +4,7 @@ import csv
 from azure.mgmt.resource import SubscriptionClient
 from azure.identity import AzureCliCredential
 import os
+from typing import List
 
 """
 # of managed identities in this sub
@@ -34,7 +35,8 @@ This is already included in the scope of the “resources-export.csv” export
 # of Azure Deployment Environments in this sub
 """
 
-def createPath():
+
+def create_path() -> str:
     path = os.getcwd() + "/data"
     # Check whether the specified path exists or not
 
@@ -45,7 +47,9 @@ def createPath():
     else:
         print(f"Using existing {path} directory")
     return path
-def get_resources(strQuery):
+
+
+def get_resources(strQuery : str) -> arg.models.QueryResponse:
     """
     This function will return the results of the query.
     It uses the AzureCLI Credential to authenticate to Azure and query the Azure Resource Graph
@@ -82,15 +86,21 @@ def get_resources(strQuery):
     return argResults
 
 
-def get_aks_clusters():
+def enumerate_rbac_roles(object_id: str) -> list:
+    return []
 
+
+def get_aks_clusters() -> list:
     query = "resources | where type == 'microsoft.containerservice/managedclusters' | project name, id, type, tenantId, location, resourceGroup, subscriptionId, identity"
     results = get_resources(query)
     print(f'Total AKS Clusters: {len(results.data)}')
     for item in results.data:
         print(item)
-    write_to_csv('raw-aks-resources-export.csv', results.data)
-def get_all_managed_identities():
+    # write_to_csv('raw-aks-resources-export.csv', results.data)
+    return results.data
+
+
+def get_all_managed_identities() -> list:
     """
 
     :return: list of all managed identities
@@ -103,9 +113,12 @@ def get_all_managed_identities():
     print(f'Total Managed Identities: {len(results.data)}')
     for item in results.data:
         print(item)
-    write_to_csv('resources-export.csv', results.data)
+    # write_to_csv('resources-export.csv', results.data)
 
-def pre_check():
+    return results.data
+
+
+def pre_check() -> bool:
     """
     TODO
     Check to ensure that the required modules are installed
@@ -113,40 +126,48 @@ def pre_check():
     :return: bool
     """
     return True
+
+
 # generate a function that writes to a csv file
 
-def write_to_csv(file_name, data, *args, **kwargs):
+def write_to_csv(file_name, data, *args, **kwargs) -> None:
     """
     @param fname: string, name of file to write
     @param data: list of list of items
 
     Write data to file
     """
-    dataDir = createPath()
+    dataDir = create_path()
     full_file_name = dataDir + "/" + file_name
     with open(full_file_name, 'w', newline='\n') as csv_file:
-        #csvwriter = csv.writer(csv_file, delimiter=',', quotechar='|', quoting=csv.QUOTE_MINIMAL)
+        # csvwriter = csv.writer(csv_file, delimiter=',', quotechar='|', quoting=csv.QUOTE_MINIMAL)
         csvwriter = csv.DictWriter(csv_file, fieldnames=data[0].keys())
         csvwriter.writeheader()
         for row in data:
             csvwriter.writerow(row)
 
-def gather_inventory():
+
+def gather_inventory() -> None:
     # Use a breakpoint in the code line below to debug your script.
     """
     This function will gather the inventory for Azure Managed Identities
     :return:
     """
-def execute_discovery():
+
+
+def execute_discovery() -> None:
     """
     This function will execute the discovery process
     :return:
     """
-def execute_report():
+
+
+def execute_report() -> None:
     """
     This function will execute the report generation
     :return:
     """
+
 
 # Press the green button in the gutter to run the script.
 if __name__ == '__main__':
@@ -154,7 +175,6 @@ if __name__ == '__main__':
     gather_inventory()
     execute_discovery()
     execute_report()
-    get_all_managed_identities()
-    get_aks_clusters()
 
-
+    write_to_csv('raw-resources-export.csv', get_all_managed_identities())
+    write_to_csv('raw-aks-resources-export.csv', get_aks_clusters())
