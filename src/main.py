@@ -45,7 +45,7 @@ def createPath():
     else:
         print(f"Using existing {path} directory")
     return path
-def getresources( strQuery ):
+def get_resources(strQuery):
     """
     This function will return the results of the query.
     It uses the AzureCLI Credential to authenticate to Azure and query the Azure Resource Graph
@@ -84,11 +84,12 @@ def getresources( strQuery ):
 
 def get_aks_clusters():
 
-    query = "resources | where type == 'microsoft.containerservice/managedclusters' | project-away kind, ['tags'], managedBy, plan, zones, extendedLocation, sku, properties"
-    results = getresources(query)
+    query = "resources | where type == 'microsoft.containerservice/managedclusters' | project name, id, type, tenantId, location, resourceGroup, subscriptionId, identity"
+    results = get_resources(query)
+    print(f'Total AKS Clusters: {len(results.data)}')
     for item in results.data:
         print(item)
-   # write_to_csv('resources-export.csv', results.data)
+    write_to_csv('raw-aks-resources-export.csv', results.data)
 def get_all_managed_identities():
     """
 
@@ -97,8 +98,9 @@ def get_all_managed_identities():
     query = "resources | where type == 'microsoft.managedidentity/userassignedidentities' or \
     identity contains 'SystemAssigned'| extend managedidentity=iff(isnull(identity), properties, identity) \
     | extend identityType=iff(isnull(identity), 'UserAssignedIdentity', 'SystemAssignedIdentity') \
-    | project-away kind, ['tags'], managedBy, plan, zones, extendedLocation, sku, properties, identity"
-    results = getresources(query)
+    | project name, id, type, tenantId, location, resourceGroup, subscriptionId, managedidentity, identityType"
+    results = get_resources(query)
+    print(f'Total Managed Identities: {len(results.data)}')
     for item in results.data:
         print(item)
     write_to_csv('resources-export.csv', results.data)
