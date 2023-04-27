@@ -7,16 +7,14 @@ import os
 from typing import List
 
 """
-# of managed identities in this sub
-UAMI - UserAssigned (microsoft.managedidentity/userassignedidentities) is already included in the scope of the “resources-export.csv” export
-SAMI - SystemAssigned needs to be captured. This can be the # of resources of a given type with SAMI, a column for the ResourceType in the “resources-export.csv” export
+
 # of Azure RBAC assignments in this sub direct to managed identities (as opposed to via a group)
 This would be exported in the “subid-rbac-assignements.csv”
 # of managed identities in this sub assigned roles in AAD RBAC (these cannot be transferred)
 This would be exported in the “subid-rbac-assignments.csv”
 # of managed identities used as Federated Identity Credentials in app registrations in AAD
 This would be exported in the “AAD-fic-appreg.csv”
-# of Key Vaults in this sub
+
 This is already included in the scope of the “resources-export.csv” export
 # of Storage accounts with local AAD-based authZ enabled in this sub
 This could be a column in the “resources-export.csv” export showing “# of resources with AuthZ enabled”
@@ -48,6 +46,19 @@ def create_path() -> str:
         print(f"Using existing {path} directory")
     return path
 
+# of Key Vaults in this sub
+def get_all_vaults() -> list:
+    query = "resources \
+    | where type == 'microsoft.keyvault/vaults' \
+    | extend d=parse_json(properties) \
+    | extend access_policies=d['accessPolicies'] \
+    | project name, id, type, tenantId, location, resourceGroup, subscriptionId, access_policies"
+
+    results = get_resources(query)
+    print(f'Total Key Vaults: {len(results.data)}')
+    for item in results.data:
+        print(item)
+    return results.data
 
 def get_resources(strQuery : str) -> arg.models.QueryResponse:
     """
@@ -87,11 +98,17 @@ def get_resources(strQuery : str) -> arg.models.QueryResponse:
 
 
 def enumerate_rbac_roles(object_id: str) -> list:
+    """
+    TO DO - get all RBAC assignments for a given object_id
+    :param object_id:
+    :return:
+    """
     return []
 
 
 def get_aks_clusters() -> list:
-    query = "resources | where type == 'microsoft.containerservice/managedclusters' | project name, id, type, tenantId, location, resourceGroup, subscriptionId, identity"
+    query = "resources | where type == 'microsoft.containerservice/managedclusters' | \
+    project name, id, type, tenantId, location, resourceGroup, subscriptionId, identity"
     results = get_resources(query)
     print(f'Total AKS Clusters: {len(results.data)}')
     for item in results.data:
@@ -99,7 +116,12 @@ def get_aks_clusters() -> list:
     # write_to_csv('raw-aks-resources-export.csv', results.data)
     return results.data
 
-
+"""
+ of managed identities in this sub
+ UAMI - UserAssigned (microsoft.managedidentity/userassignedidentities) is already included in the scope of the 
+ “resources-export.csv” export SAMI - SystemAssigned needs to be captured. This can be the # of resources of a given 
+ type with SAMI, a column for the ResourceType in the “resources-export.csv” export
+ """
 def get_all_managed_identities() -> list:
     """
 
@@ -114,9 +136,7 @@ def get_all_managed_identities() -> list:
     for item in results.data:
         print(item)
     # write_to_csv('resources-export.csv', results.data)
-
     return results.data
-
 
 def pre_check() -> bool:
     """
@@ -175,6 +195,6 @@ if __name__ == '__main__':
     gather_inventory()
     execute_discovery()
     execute_report()
-
+    write_to_csv('raw-vaults-export.csv', get_all_vaults())
     write_to_csv('raw-resources-export.csv', get_all_managed_identities())
     write_to_csv('raw-aks-resources-export.csv', get_aks_clusters())
