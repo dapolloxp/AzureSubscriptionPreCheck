@@ -46,6 +46,20 @@ def create_path() -> str:
         print(f"Using existing {path} directory")
     return path
 
+def get_postgres_flexible_servers() -> list:
+    query = "resources \
+    | where type in ('microsoft.dbforpostgresql/flexibleservers') \
+    | extend config=parse_json(properties) \
+    | extend activeDirectoryAuth=config['authConfig']['activeDirectoryAuth'] \
+    | extend passwordAuth=config['authConfig']['passwordAuth'] \
+    | project name, type, location, resourceGroup, subscriptionId, activeDirectoryAuth, passwordAuth"
+
+    results = get_resources(query)
+    print(f'Total Postgres Flexible Servers: {len(results.data)}')
+    for item in results.data:
+        print(item)
+    return results.data
+
 # of Key Vaults in this sub
 def get_all_vaults() -> list:
     query = "resources \
@@ -107,8 +121,9 @@ def enumerate_rbac_roles(object_id: str) -> list:
 
 
 def get_aks_clusters() -> list:
-    query = "resources | where type == 'microsoft.containerservice/managedclusters' | \
-    project name, id, type, tenantId, location, resourceGroup, subscriptionId, identity"
+    query = "resources \
+    | where type == 'microsoft.containerservice/managedclusters'  \
+    | project name, id, type, tenantId, location, resourceGroup, subscriptionId, identity"
     results = get_resources(query)
     print(f'Total AKS Clusters: {len(results.data)}')
     for item in results.data:
@@ -198,3 +213,4 @@ if __name__ == '__main__':
     write_to_csv('raw-vaults-export.csv', get_all_vaults())
     write_to_csv('raw-resources-export.csv', get_all_managed_identities())
     write_to_csv('raw-aks-resources-export.csv', get_aks_clusters())
+    write_to_csv('raw-postgres-flexible-servers-export.csv', get_postgres_flexible_servers())
