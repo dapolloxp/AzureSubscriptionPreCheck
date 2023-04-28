@@ -118,7 +118,7 @@ def get_resources(credential: AzureCliCredential, str_query: str, subscription_i
 
 def get_subscription_data(credential) -> list | list:
     """
-    returns all of the subscriptions in the tenant
+    returns subscription list and subscription raw data. This returns only subscription that a user has access to.
     """
     subsClient = SubscriptionClient(credential)
     # get the list of subscriptions the user has access to
@@ -164,12 +164,14 @@ def generate_auth_credentials():
 def enumerate_rbac_roles(credential: AzureCliCredential, subscription_id: str, object_id: str) -> list:
     """
     TO DO - get all RBAC assignments for a given object_id
+    :param subscription_id:
+    :param credential:
     :param object_id:
     :return:
     """
     # get credential
     authorization_client = AuthorizationManagementClient(credential, subscription_id)
-    results = authorization_client.role_assignments.list_for_scope(scope=subscription_id,
+    results = authorization_client.role_assignments.list_for_scope(scope='/subscriptions/' + subscription_id,
                                                                    filter=f"principalId eq '{object_id}'")
     print('-' * 50)
     # TO DO write output to JSON object
@@ -211,7 +213,8 @@ def get_all_managed_identities(credential: AzureCliCredential, subscription_id: 
     identity contains 'SystemAssigned' \
     | extend managedidentity=iff(isnull(identity), properties, identity) \
     | extend identityType=iff(isnull(identity), 'UserAssignedIdentity', 'SystemAssignedIdentity') \
-    | project name, id, type, tenantId, location, resourceGroup, subscriptionId, managedidentity, identityType"
+    | extend principalId=parse_json(managedidentity)['principalId'] \
+    | project name, id, type, tenantId, location, resourceGroup, subscriptionId, managedidentity, principalId, identityType"
     results = get_resources(credential, query, subscription_id)
     print(f'Total Managed Identities: {len(results.data)}')
     for item in results.data:
@@ -291,7 +294,11 @@ if __name__ == '__main__':
     print(list_sub_dict)
     for sub in sub_list:
         if sub != '7dc3c9b5-bb4b-4193-8862-7a02bdf9a001':
-            get_all_managed_identities(creds, sub)
+            managed_identities = get_all_managed_identities(creds, sub)
+            for mi in managed_identities:
+                enumerate_rbac_roles(creds, sub, mi['principalId'])
+            # print(mi['principalId'])
+
             get_all_vaults(creds, sub)
             get_aks_clusters(creds, sub)
             get_postgres_flexible_servers(creds, sub)
