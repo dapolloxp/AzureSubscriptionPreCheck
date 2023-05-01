@@ -47,6 +47,20 @@ def create_path() -> str:
         print(f"Using existing {path} directory")
     return path
 
+def get_sql_servers(credential: AzureCliCredential, subscription_id: str) -> list:
+    query = "resources \
+    | where type in ('microsoft.sql/servers') \
+    | extend properties=parse_json(properties) \
+    | extend activeDirectoryAuth=properties['administrators']['azureADOnlyAuthentication'] \
+    | extend administratorType=properties['administrators']['administratorType'] \
+    | extend objectid=properties['administrators']['sid'] \
+    | project name, type, location, resourceGroup, subscriptionId, activeDirectoryAuth, administratorType, objectid"
+
+    results = get_resources(credential, query, subscription_id)
+    print(f'Total Azure SQL DB Servers: {len(results.data)}')
+    for item in results.data:
+        print(item)
+    return results.data
 
 def get_postgres_flexible_servers(credential: AzureCliCredential, subscription_id: str) -> list:
     query = "resources \
@@ -173,16 +187,16 @@ def enumerate_rbac_roles(credential: AzureCliCredential, subscription_id: str, o
     authorization_client = AuthorizationManagementClient(credential, subscription_id)
     results = authorization_client.role_assignments.list_for_scope(scope='/subscriptions/' + subscription_id,
                                                                    filter=f"principalId eq '{object_id}'")
-    print('-' * 50)
+    print('*-' * 25)
     # TO DO write output to JSON object
     for item in results:
         # print(item)
         print(f'role_definition_id: {item.role_definition_id}')
         print(f'scope: {item.scope}')
         print(f'principal_id: {item.principal_id}')
-        print(f'princitpal_type: {item.principal_type}')
+        print(f'principal_type: {item.principal_type}')
         # print dashed line
-        print('-' * 50)
+        print('*-' * 25)
     return []
 
 
@@ -302,3 +316,4 @@ if __name__ == '__main__':
             get_all_vaults(creds, sub)
             get_aks_clusters(creds, sub)
             get_postgres_flexible_servers(creds, sub)
+            get_sql_servers(creds, sub)
