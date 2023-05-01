@@ -18,8 +18,10 @@ This would be exported in the “AAD-fic-appreg.csv”
 
 This is already included in the scope of the “resources-export.csv” export
 # of Storage accounts with local AAD-based authZ enabled in this sub
+
 This could be a column in the “resources-export.csv” export showing “# of resources with AuthZ enabled”
 # of SQL with AAD authN enabled in this sub
+
 This could be a column in the “resources-export.csv” export showing “# of resources with AuthZ enabled”
 # of MySQL with AAD authN enabled in this sub
 This could be a column in the “resources-export.csv” export showing “# of resources with AuthZ enabled”
@@ -35,8 +37,8 @@ This is already included in the scope of the “resources-export.csv” export
 """
 
 
-def create_path() -> str:
-    path = os.getcwd() + "/data"
+def create_path(subscription: str) -> str:
+    path = os.getcwd() + "/data" + "/" + subscription
     # Check whether the specified path exists or not
 
     if not os.path.exists(path):
@@ -46,6 +48,7 @@ def create_path() -> str:
     else:
         print(f"Using existing {path} directory")
     return path
+
 
 def get_sql_servers(credential: AzureCliCredential, subscription_id: str) -> list:
     query = "resources \
@@ -61,6 +64,7 @@ def get_sql_servers(credential: AzureCliCredential, subscription_id: str) -> lis
     for item in results.data:
         print(item)
     return results.data
+
 
 def get_postgres_flexible_servers(credential: AzureCliCredential, subscription_id: str) -> list:
     query = "resources \
@@ -147,9 +151,6 @@ def generate_rbac_per_sub(credential: AzureCliCredential, subscription_id: str) 
     generate RBAC assignments for each MI per subscription
     :return:
     """
-
-    # get credential
-
     # get list of subscriptions
     subList, subRaw = get_subscription_data(credential)
 
@@ -187,17 +188,16 @@ def enumerate_rbac_roles(credential: AzureCliCredential, subscription_id: str, o
     authorization_client = AuthorizationManagementClient(credential, subscription_id)
     results = authorization_client.role_assignments.list_for_scope(scope='/subscriptions/' + subscription_id,
                                                                    filter=f"principalId eq '{object_id}'")
+    roles = []
     print('*-' * 25)
     # TO DO write output to JSON object
     for item in results:
-        # print(item)
-        print(f'role_definition_id: {item.role_definition_id}')
-        print(f'scope: {item.scope}')
-        print(f'principal_id: {item.principal_id}')
-        print(f'principal_type: {item.principal_type}')
-        # print dashed line
+        dict_obj = {'name': item.name, 'role_definition_id': item.role_definition_id, 'scope': item.scope,
+                    'principal_id': item.principal_id, 'principal_type': item.principal_type}
+        roles.append(dict_obj)
+        print(dict_obj)
         print('*-' * 25)
-    return []
+    return roles
 
 
 def get_aks_clusters(credential: AzureCliCredential, subscription_id: str) -> list:
@@ -249,18 +249,23 @@ def pre_check() -> bool:
 
 # generate a function that writes to a csv file
 
-def write_to_csv(file_name, data, *args, **kwargs) -> None:
+def write_to_csv(file_name: str, data: list, subscription: str, *args, **kwargs) -> None:
     """
     @param fname: string, name of file to write
     @param data: list of list of items
     Write data to file
+    :param subscription:
     :param file_name:
 
     """
-    dataDir = create_path()
-    full_file_name = dataDir + "/" + file_name
+    data_dir = create_path(subscription)
+    file_name = subscription[-6:] + "-" + file_name
+    full_file_name = data_dir + "/" + file_name
     with open(full_file_name, 'w', newline='\n') as csv_file:
         # csvwriter = csv.writer(csv_file, delimiter=',', quotechar='|', quoting=csv.QUOTE_MINIMAL)
+        if data is None or len(data) == 0:
+            csv_file.write('No Resources Found')
+            return
         csvwriter = csv.DictWriter(csv_file, fieldnames=data[0].keys())
         csvwriter.writeheader()
         for row in data:
@@ -309,11 +314,14 @@ if __name__ == '__main__':
     for sub in sub_list:
         if sub != '7dc3c9b5-bb4b-4193-8862-7a02bdf9a001':
             managed_identities = get_all_managed_identities(creds, sub)
+            write_to_csv('raw-resources-export.csv', managed_identities, sub)
             for mi in managed_identities:
-                enumerate_rbac_roles(creds, sub, mi['principalId'])
+                write_to_csv("mi-" + mi['principalId'][-6:] + '-raw-rbac-assignments-export.csv',
+                             enumerate_rbac_roles(creds, sub, mi['principalId']), sub)
+                # enumerate_rbac_roles(creds, sub, mi['principalId'])
             # print(mi['principalId'])
 
-            get_all_vaults(creds, sub)
+            write_to_csv('raw-vaults-export.csv', get_all_vaults(creds, sub), sub)
             get_aks_clusters(creds, sub)
             get_postgres_flexible_servers(creds, sub)
             get_sql_servers(creds, sub)
