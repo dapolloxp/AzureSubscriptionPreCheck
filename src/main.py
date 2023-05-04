@@ -274,6 +274,7 @@ def get_all_managed_identities(credential: AzureCliCredential, subscription_id: 
     | extend identityType=iff(isnull(identity), 'UserAssignedIdentity', 'SystemAssignedIdentity') \
     | extend principalId=parse_json(managedidentity)['principalId'] \
     | project name, id, type, tenantId, location, resourceGroup, subscriptionId, managedidentity, principalId, identityType"
+
     results = get_resources(credential, query, subscription_id)
     print(f'Total Managed Identities: {len(results.data)}')
     for item in results.data:
@@ -357,21 +358,28 @@ if __name__ == '__main__':
     # print(list_sub_dict)
     for sub in sub_list:
         if sub != '7dc3c9b5-bb4b-4193-8862-7a02bdf9a001':
-            # managed_identities = get_all_managed_identities(creds, sub)
-            write_to_csv('raw-resources-export.csv', get_all_managed_identities(creds, sub), sub)
-            # for mi in managed_identities:
-            #     write_to_csv("mi-" + mi['principalId'][-6:] + '-raw-rbac-assignments-export.csv',
-            #                  enumerate_rbac_roles(creds, sub, mi['principalId']), sub)
-            #     # enumerate_rbac_roles(creds, sub, mi['principalId'])
-            # # print(mi['principalId'])
-            #
-            # write_to_csv('raw-vaults-export.csv', get_all_vaults(creds, sub), sub)
-            # get_aks_clusters(creds, sub)
-            # get_postgres_flexible_servers(creds, sub)
-            # get_sql_servers(creds, sub)
+            managed_identities = get_all_managed_identities(creds, sub)
+            if len(managed_identities) > 0:
+                ('raw-resources-export.csv', managed_identities, sub)
+            for mi in managed_identities:
+                write_to_csv("mi-" + mi['principalId'][-6:] + '-raw-rbac-assignments-export.csv',
+                             enumerate_rbac_roles(creds, sub, mi['principalId']), sub)
+            vaults = get_all_vaults(creds, sub)
+            if len(vaults) > 0:
+                write_to_csv('raw-vaults-export.csv', vaults, sub)
+            aks_clusters = get_aks_clusters(creds, sub)
+            if len(aks_clusters) > 0:
+                write_to_csv('raw-aks-resources-export.csv', aks_clusters, sub)
+
+            postgres_flex_servers = get_postgres_flexible_servers(creds, sub)
+            if len(postgres_flex_servers) > 0:
+                write_to_csv('raw-postgres-flexible-servers-export.csv', postgres_flex_servers, sub)
+
+            azure_sql_servers = get_sql_servers(creds, sub)
+            if len(postgres_flex_servers) > 0:
+                write_to_csv('raw-sql-servers-export.csv', get_sql_servers(creds, sub), sub)
+
             # get_sql_managed_instances(creds, sub)
             acct, rbac_roles = get_cosmos_db(creds, sub)
             if acct is not None:
                 write_to_csv(acct + '-raw-cosmosdb-export.csv', rbac_roles, sub)
-
-            # print(test)
