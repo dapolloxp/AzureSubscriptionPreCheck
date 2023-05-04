@@ -1,11 +1,13 @@
-import azure.mgmt.resourcegraph as arg
-from azure.mgmt.authorization import AuthorizationManagementClient
 import csv
+import os
+
+import azure.mgmt.resourcegraph as arg
+from azure.identity import AzureCliCredential
+from azure.mgmt.authorization import AuthorizationManagementClient
 # Import specific methods and models from other libraries
 from azure.mgmt.resource import SubscriptionClient
-from azure.identity import AzureCliCredential
-import os
-from typing import List
+from azure.cosmos import CosmosClient
+from azure.mgmt.cosmosdb import CosmosDBManagementClient
 
 """
 
@@ -35,6 +37,51 @@ This is already included in the scope of the “resources-export.csv” export
 This is already included in the scope of the “resources-export.csv” export
 # of Azure Deployment Environments in this sub
 """
+
+
+def _enumerate_cosmosdb_role_assignments(cosmosdb_client: CosmosDBManagementClient, resource_group_name: str,
+                                         account_name: str) -> list:
+    """
+    Enumerate the Cosmos DB role assignments
+    :param cosmosdb_client:
+    :param resource_group_name:
+    :param account_name:
+    :return:
+    """
+    results = cosmosdb_client.sql_resources.list_sql_role_assignments(resource_group_name=resource_group_name,
+                                                                      account_name=account_name)
+    cosmos_rbac_role_assignments = []
+    for r in results:
+        role = r.as_dict()
+        cosmos_rbac_role_assignments.append(role)
+        print(r)
+    return cosmos_rbac_role_assignments
+
+
+def get_cosmos_db(credential: AzureCliCredential, subscription_id: str) -> str | list:
+    query = "resources \
+            | where type == 'microsoft.documentdb/databaseaccounts' \
+            | project name, id, type, tenantId, location, resourceGroup, subscriptionId, properties, identity"
+    results = get_resources(credential, query, subscription_id)
+    """
+    One or multiple scope(s) that the role definition can be assigned at; supported scopes are:
+    / (account-level),
+    /dbs/<database-name> (database-level),
+    /dbs/<database-name>/colls/<container-name> (container-level).
+    """
+
+    cosmosdb_client = CosmosDBManagementClient(
+        credential=credential,
+        subscription_id=subscription_id
+    )
+    cosmos_rbac_role_assignments = []
+    if len(results.data) > 0:
+        cosmos_rbac_role_assignments = _enumerate_cosmosdb_role_assignments(cosmosdb_client,
+                                                                            results.data[0]['resourceGroup'],
+                                                                            results.data[0]['name'])
+        return results.data[0]['name'], cosmos_rbac_role_assignments
+    else:
+        return None, cosmos_rbac_role_assignments
 
 
 def create_path(subscription: str) -> str:
@@ -122,10 +169,8 @@ def get_resources(credential: AzureCliCredential, str_query: str, subscription_i
     # Create Azure Resource Graph client and set options
     arg_client = arg.ResourceGraphClient(credential)
     arg_query_options = arg.models.QueryRequestOptions(result_format="objectArray")
-
     # Create query
     arg_query = arg.models.QueryRequest(subscriptions=[subscription_id], query=str_query, options=arg_query_options)
-
     # Run query
     arg_results = arg_client.resources(arg_query)
 
@@ -138,12 +183,12 @@ def get_subscription_data(credential) -> list | list:
     """
     returns subscription list and subscription raw data. This returns only subscription that a user has access to.
     """
-    subsClient = SubscriptionClient(credential)
+    subs_client = SubscriptionClient(credential)
     # get the list of subscriptions the user has access to
-    subsRaw = [sub.as_dict() for sub in subsClient.subscriptions.list()]
+    subs_raw = [sub.as_dict() for sub in subs_client.subscriptions.list()]
     # get the list of subscription ids as a list
-    subsList = [sub.get('subscription_id') for sub in subsRaw]
-    return subsList, subsRaw
+    subs_list = [s.get('subscription_id') for s in subs_raw]
+    return subs_list, subs_raw
 
 
 def generate_rbac_per_sub(credential: AzureCliCredential, subscription_id: str) -> list:
@@ -233,7 +278,6 @@ def get_all_managed_identities(credential: AzureCliCredential, subscription_id: 
     print(f'Total Managed Identities: {len(results.data)}')
     for item in results.data:
         print(item)
-    # write_to_csv('resources-export.csv', results.data)
     return results.data
 
 
@@ -309,19 +353,25 @@ if __name__ == '__main__':
     # execute_report()
     creds = generate_auth_credentials()  # do this once
     sub_list, list_sub_dict = get_subscription_data(creds)
-    print(sub_list)
-    print(list_sub_dict)
+    # print(sub_list)
+    # print(list_sub_dict)
     for sub in sub_list:
         if sub != '7dc3c9b5-bb4b-4193-8862-7a02bdf9a001':
-            managed_identities = get_all_managed_identities(creds, sub)
-            write_to_csv('raw-resources-export.csv', managed_identities, sub)
-            for mi in managed_identities:
-                write_to_csv("mi-" + mi['principalId'][-6:] + '-raw-rbac-assignments-export.csv',
-                             enumerate_rbac_roles(creds, sub, mi['principalId']), sub)
-                # enumerate_rbac_roles(creds, sub, mi['principalId'])
-            # print(mi['principalId'])
+            # managed_identities = get_all_managed_identities(creds, sub)
+            write_to_csv('raw-resources-export.csv', get_all_managed_identities(creds, sub), sub)
+            # for mi in managed_identities:
+            #     write_to_csv("mi-" + mi['principalId'][-6:] + '-raw-rbac-assignments-export.csv',
+            #                  enumerate_rbac_roles(creds, sub, mi['principalId']), sub)
+            #     # enumerate_rbac_roles(creds, sub, mi['principalId'])
+            # # print(mi['principalId'])
+            #
+            # write_to_csv('raw-vaults-export.csv', get_all_vaults(creds, sub), sub)
+            # get_aks_clusters(creds, sub)
+            # get_postgres_flexible_servers(creds, sub)
+            # get_sql_servers(creds, sub)
+            # get_sql_managed_instances(creds, sub)
+            acct, rbac_roles = get_cosmos_db(creds, sub)
+            if acct is not None:
+                write_to_csv(acct + '-raw-cosmosdb-export.csv', rbac_roles, sub)
 
-            write_to_csv('raw-vaults-export.csv', get_all_vaults(creds, sub), sub)
-            get_aks_clusters(creds, sub)
-            get_postgres_flexible_servers(creds, sub)
-            get_sql_servers(creds, sub)
+            # print(test)
