@@ -361,13 +361,17 @@ if __name__ == '__main__':
             managed_identities = get_all_managed_identities(creds, sub)
             if len(managed_identities) > 0:
                 ('raw-resources-export.csv', managed_identities, sub)
+
             for mi in managed_identities:
-                write_to_csv("mi-" + mi['principalId'][-6:] + '-raw-rbac-assignments-export.csv',
-                             enumerate_rbac_roles(creds, sub, mi['principalId']), sub)
+                if not(mi['principalId'] is None or mi['principalId'] == ''):
+                    write_to_csv("mi-" + mi['principalId'][-6:] + '-raw-rbac-assignments-export.csv',
+                                enumerate_rbac_roles(creds, sub, mi['principalId']), sub)
             vaults = get_all_vaults(creds, sub)
+
             if len(vaults) > 0:
                 write_to_csv('raw-vaults-export.csv', vaults, sub)
             aks_clusters = get_aks_clusters(creds, sub)
+            
             if len(aks_clusters) > 0:
                 write_to_csv('raw-aks-resources-export.csv', aks_clusters, sub)
 
