@@ -8,13 +8,17 @@ from azure.mgmt.authorization import AuthorizationManagementClient
 from azure.mgmt.resource import SubscriptionClient
 from azure.cosmos import CosmosClient
 from azure.mgmt.cosmosdb import CosmosDBManagementClient
+from azure.graphrbac import GraphRbacManagementClient
+import azure
 
 """
 
 # of Azure RBAC assignments in this sub direct to managed identities (as opposed to via a group)
-This would be exported in the “subid-rbac-assignements.csv”
+This would be exported in the “subid-rbac-assignements.csv” DONE
+
 # of managed identities in this sub assigned roles in AAD RBAC (these cannot be transferred)
-This would be exported in the “subid-rbac-assignments.csv”
+This would be exported in the “subid-rbac-assignments.csv” DONE
+
 # of managed identities used as Federated Identity Credentials in app registrations in AAD
 This would be exported in the “AAD-fic-appreg.csv”
 
@@ -26,10 +30,12 @@ This could be a column in the “resources-export.csv” export showing “# of 
 
 This could be a column in the “resources-export.csv” export showing “# of resources with AuthZ enabled”
 # of MySQL with AAD authN enabled in this sub
+
 This could be a column in the “resources-export.csv” export showing “# of resources with AuthZ enabled”
-# of Cosmos DB with local RBAC enabled in this sub
+# of Cosmos DB with local RBAC enabled in this sub -- DONE
+
 This could be a column in the “resources-export.csv” export showing “# of resources with Local RBAC enabled”
-# of AKS clusters in this sub
+# of AKS clusters in this sub -- DONE
 This is already included in the scope of the “resources-export.csv” export
 # of AAD Domain Services in this sub (this is fatal, we won’t move these ever)
 This is already included in the scope of the “resources-export.csv” export
@@ -37,6 +43,7 @@ This is already included in the scope of the “resources-export.csv” export
 This is already included in the scope of the “resources-export.csv” export
 # of Azure Deployment Environments in this sub
 """
+
 
 
 def _enumerate_cosmosdb_role_assignments(cosmosdb_client: CosmosDBManagementClient, resource_group_name: str,
@@ -224,6 +231,8 @@ def generate_auth_credentials():
 def enumerate_rbac_roles(credential: AzureCliCredential, subscription_id: str, object_id: str) -> list:
     """
     TO DO - get all RBAC assignments for a given object_id
+    TO DO - Write all RBACs to a single file - will need to open existing file and append
+    TO DO - Filter Mgmt Groups
     :param subscription_id:
     :param credential:
     :param object_id:
@@ -231,17 +240,24 @@ def enumerate_rbac_roles(credential: AzureCliCredential, subscription_id: str, o
     """
     # get credential
     authorization_client = AuthorizationManagementClient(credential, subscription_id)
-    results = authorization_client.role_assignments.list_for_scope(scope='/subscriptions/' + subscription_id,
-                                                                   filter=f"principalId eq '{object_id}'")
+
+    if object_id is None:
+        results = authorization_client.role_assignments.list_for_scope(scope='/subscriptions/' + subscription_id)
+    else:
+        results = authorization_client.role_assignments.list_for_scope(scope='/subscriptions/' + subscription_id,
+                                                                       filter=f"principalId eq '{object_id}'")
     roles = []
-    print('*-' * 25)
+
     # TO DO write output to JSON object
     for item in results:
         dict_obj = {'name': item.name, 'role_definition_id': item.role_definition_id, 'scope': item.scope,
                     'principal_id': item.principal_id, 'principal_type': item.principal_type}
-        roles.append(dict_obj)
-        print(dict_obj)
-        print('*-' * 25)
+        if item.scope.startswith("/subscriptions"):
+            roles.append(dict_obj)
+            print('*-' * 25)
+            print(f'Adding: {dict_obj}')
+            print('*-' * 25)
+
     return roles
 
 
@@ -358,20 +374,36 @@ if __name__ == '__main__':
     # print(list_sub_dict)
     for sub in sub_list:
         if sub != '7dc3c9b5-bb4b-4193-8862-7a02bdf9a001':
+
+            ###############################
+            ### Get all RBAC permissions at the subscription level
+            ###############################
+            sub_rbac_roles = enumerate_rbac_roles(creds, sub, None)
+            if sub_rbac_roles is not None and len(sub_rbac_roles) > 0:
+                write_to_csv("sub-" + sub[-6:] + '-raw-rbac-assignments-export.csv', sub_rbac_roles, sub)
+            ###############################
+            ### Get all managed identities and write to csv
+            ###############################
             managed_identities = get_all_managed_identities(creds, sub)
             if len(managed_identities) > 0:
-                ('raw-resources-export.csv', managed_identities, sub)
+                write_to_csv('raw-resources-export.csv', managed_identities, sub)
 
             for mi in managed_identities:
-                if not(mi['principalId'] is None or mi['principalId'] == ''):
-                    write_to_csv("mi-" + mi['principalId'][-6:] + '-raw-rbac-assignments-export.csv',
-                                enumerate_rbac_roles(creds, sub, mi['principalId']), sub)
+                if not (mi['principalId'] is None or mi['principalId'] == ''):
+                    rbac_roles = enumerate_rbac_roles(creds, sub, mi['principalId'])
+                    if rbac_roles is not None and len(rbac_roles) > 0:
+                        write_to_csv("mi-" + mi['principalId'][-6:] + '-raw-rbac-assignments-export.csv',
+                                     rbac_roles, sub)
+
+            ###############################
+            ### Get all key vaults and write to csv
+            ###############################
             vaults = get_all_vaults(creds, sub)
 
             if len(vaults) > 0:
                 write_to_csv('raw-vaults-export.csv', vaults, sub)
             aks_clusters = get_aks_clusters(creds, sub)
-            
+
             if len(aks_clusters) > 0:
                 write_to_csv('raw-aks-resources-export.csv', aks_clusters, sub)
 
