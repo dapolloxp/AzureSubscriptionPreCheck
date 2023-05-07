@@ -1,5 +1,6 @@
 import csv
 import os
+import datetime
 
 import azure.mgmt.resourcegraph as arg
 from azure.identity import AzureCliCredential
@@ -92,7 +93,7 @@ def get_cosmos_db(credential: AzureCliCredential, subscription_id: str) -> str |
 
 
 def create_path(subscription: str) -> str:
-    path = os.getcwd() + "/data" + "/" + subscription
+    path = os.getcwd() + os.sep + "data" + os.sep + subscription
     # Check whether the specified path exists or not
 
     if not os.path.exists(path):
@@ -319,10 +320,13 @@ def write_to_csv(file_name: str, data: list, subscription: str, *args, **kwargs)
     :param file_name:
 
     """
+
+    # TODO - move filename stuff outside of the function. This should just write out data
     data_dir = create_path(subscription)
     file_name = subscription[-6:] + "-" + file_name
-    full_file_name = data_dir + "/" + file_name
-    with open(full_file_name, 'w', newline='\n') as csv_file:
+    full_file_name = data_dir + os.sep + file_name
+
+    with open(full_file_name, 'a', newline='\n') as csv_file:
         # csvwriter = csv.writer(csv_file, delimiter=',', quotechar='|', quoting=csv.QUOTE_MINIMAL)
         if data is None or len(data) == 0:
             csv_file.write('No Resources Found')
@@ -331,7 +335,6 @@ def write_to_csv(file_name: str, data: list, subscription: str, *args, **kwargs)
         csvwriter.writeheader()
         for row in data:
             csvwriter.writerow(row)
-
 
 def gather_inventory() -> None:
     # Use a breakpoint in the code line below to debug your script.
@@ -388,12 +391,12 @@ if __name__ == '__main__':
             if len(managed_identities) > 0:
                 write_to_csv('raw-resources-export.csv', managed_identities, sub)
 
+            fn = 'mi-raw-rbac-assignments-export-' + datetime.datetime.now().strftime("%Y%m%d%H%M%S") + '.csv'
             for mi in managed_identities:
                 if not (mi['principalId'] is None or mi['principalId'] == ''):
                     rbac_roles = enumerate_rbac_roles(creds, sub, mi['principalId'])
                     if rbac_roles is not None and len(rbac_roles) > 0:
-                        write_to_csv("mi-" + mi['principalId'][-6:] + '-raw-rbac-assignments-export.csv',
-                                     rbac_roles, sub)
+                        write_to_csv(fn, rbac_roles, sub)
 
             ###############################
             ### Get all key vaults and write to csv
