@@ -326,15 +326,32 @@ def write_to_csv(file_name: str, data: list, subscription: str, *args, **kwargs)
     file_name = subscription[-6:] + "-" + file_name
     full_file_name = data_dir + os.sep + file_name
 
-    with open(full_file_name, 'a', newline='\n') as csv_file:
-        # csvwriter = csv.writer(csv_file, delimiter=',', quotechar='|', quoting=csv.QUOTE_MINIMAL)
-        if data is None or len(data) == 0:
-            csv_file.write('No Resources Found')
-            return
-        csvwriter = csv.DictWriter(csv_file, fieldnames=data[0].keys())
-        csvwriter.writeheader()
-        for row in data:
-            csvwriter.writerow(row)
+    if os.path.isfile(full_file_name):
+        with open(full_file_name, 'r', newline='') as csvfile:
+            reader = csv.DictReader(csvfile)
+            if not reader.fieldnames:
+                # Write header to the file
+                with open(full_file_name, 'w', newline='') as csvfile:
+                    fieldnames = data[0].keys()
+                    writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+                    writer.writeheader()
+                    for row in data:
+                        writer.writerow(row)
+            else:
+                # Append data to the existing file
+                with open(full_file_name, 'a', newline='') as csvfile:
+                    fieldnames = reader.fieldnames
+                    writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+                    for row in data:
+                        writer.writerow(row)
+    else:
+        with open(full_file_name, 'w', newline='') as csvfile:
+            fieldnames = data[0].keys()
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+            writer.writeheader()
+            for row in data:
+                writer.writerow(row)
+
 
 def gather_inventory() -> None:
     # Use a breakpoint in the code line below to debug your script.
