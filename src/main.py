@@ -24,13 +24,13 @@ This would be exported in the “subid-rbac-assignments.csv” DONE
 This would be exported in the “AAD-fic-appreg.csv”
 
 This is already included in the scope of the “resources-export.csv” export
-# of Storage accounts with local AAD-based authZ enabled in this sub
+# of Storage accounts with local AAD-based authZ enabled in this sub - WIP
 
 This could be a column in the “resources-export.csv” export showing “# of resources with AuthZ enabled”
-# of SQL with AAD authN enabled in this sub
+# of SQL with AAD authN enabled in this sub - DONE
 
 This could be a column in the “resources-export.csv” export showing “# of resources with AuthZ enabled”
-# of MySQL with AAD authN enabled in this sub
+# of MySQL with AAD authN enabled in this sub - TO DO
 
 This could be a column in the “resources-export.csv” export showing “# of resources with AuthZ enabled”
 # of Cosmos DB with local RBAC enabled in this sub -- DONE
@@ -38,13 +38,12 @@ This could be a column in the “resources-export.csv” export showing “# of 
 This could be a column in the “resources-export.csv” export showing “# of resources with Local RBAC enabled”
 # of AKS clusters in this sub -- DONE
 This is already included in the scope of the “resources-export.csv” export
-# of AAD Domain Services in this sub (this is fatal, we won’t move these ever)
+# of AAD Domain Services in this sub (this is fatal, we won’t move these ever) - TO DO
 This is already included in the scope of the “resources-export.csv” export
-# of Microsoft Dev Box in this sub
+# of Microsoft Dev Box in this sub - TO DO
 This is already included in the scope of the “resources-export.csv” export
 # of Azure Deployment Environments in this sub
 """
-
 
 
 def _enumerate_cosmosdb_role_assignments(cosmosdb_client: CosmosDBManagementClient, resource_group_name: str,
