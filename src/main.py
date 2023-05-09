@@ -100,11 +100,12 @@ def create_path(subscription: str) -> str:
         os.makedirs(path)
         print(f"Creating {path} directory")
     else:
-        print(f"Using existing {path} directory")
+        # print(f"Using existing {path} directory")
+        pass
     return path
 
 
-def get_sql_servers(credential: AzureCliCredential, subscription_id: str) -> list:
+def get_sql_servers(credential: AzureCliCredential, subscription_id: str) -> list | int:
     query = "resources \
     | where type in ('microsoft.sql/servers') \
     | extend properties=parse_json(properties) \
@@ -114,8 +115,8 @@ def get_sql_servers(credential: AzureCliCredential, subscription_id: str) -> lis
     | project name, type, location, resourceGroup, subscriptionId, activeDirectoryAuth, administratorType, objectid"
 
     results = get_resources(credential, query, subscription_id)
-    print(f'Total Azure SQL DB Servers: {len(results.data)}')
-    return results.data
+
+    return results.data, len(results.data)
 
 
 def get_postgres_flexible_servers(credential: AzureCliCredential, subscription_id: str) -> list:
@@ -250,7 +251,7 @@ def enumerate_rbac_roles(credential: AzureCliCredential, subscription_id: str, o
     return roles
 
 
-def get_aks_clusters(credential: AzureCliCredential, subscription_id: str) -> list:
+def get_aks_clusters(credential: AzureCliCredential, subscription_id: str) -> list | int:
     """
     This function will return all of the AKS clusters in the subscription
     :param credential:
@@ -261,9 +262,8 @@ def get_aks_clusters(credential: AzureCliCredential, subscription_id: str) -> li
     | where type == 'microsoft.containerservice/managedclusters'  \
     | project name, id, type, tenantId, location, resourceGroup, subscriptionId, identity"
     results = get_resources(credential, query, subscription_id)
-    print(f'Total AKS Clusters: {len(results.data)}')
 
-    return results.data
+    return results.data, len(results.data)
 
 
 def get_all_managed_identities(credential: AzureCliCredential, subscription_id: str) -> list:
@@ -307,11 +307,12 @@ def get_managed_identity_details(credential: AzureCliCredential, subscription_id
     """
     client = ManagedServiceIdentityClient(credential=credential, subscription_id=subscription_id)
     result = client.federated_identity_credentials.list(resource_group_name=resource_group, resource_name=resource_name)
-    print(f'Federated Identity Credentials:')
+
     num_fed_creds = 0
     if result:
         results_dict_list = [item.as_dict() for item in result]
         num_fed_creds = len(results_dict_list)
+    print(f'Federated Identity Credentials for {resource_name}: {num_fed_creds}')
     return results_dict_list, num_fed_creds
 
 
@@ -425,16 +426,15 @@ if __name__ == '__main__':
                     if rbac_roles is not None and len(rbac_roles) > 0:
                         write_to_csv(fn, rbac_roles, sub)
 
-            ###############################
             ### Get all key vaults and write to csv
-            ###############################
 
             vaults = get_all_vaults(creds, sub)
 
             if len(vaults) > 0:
                 write_to_csv('raw-vaults-export.csv', vaults, sub)
 
-            aks_clusters = get_aks_clusters(creds, sub)
+            aks_clusters, num_aks_clusters = get_aks_clusters(creds, sub)
+            print(f'Total AKS Clusters: {num_aks_clusters}')
             if len(aks_clusters) > 0:
                 write_to_csv('raw-aks-resources-export.csv', aks_clusters, sub)
 
@@ -442,9 +442,10 @@ if __name__ == '__main__':
             if len(postgres_flex_servers) > 0:
                 write_to_csv('raw-postgres-flexible-servers-export.csv', postgres_flex_servers, sub)
 
-            azure_sql_servers = get_sql_servers(creds, sub)
+            azure_sql_servers, num_azure_sql_servers = get_sql_servers(creds, sub)
+            print(f'Total Azure SQL DB Servers: {num_azure_sql_servers}')
             if len(azure_sql_servers) > 0:
-                write_to_csv('raw-sql-servers-export.csv', get_sql_servers(creds, sub), sub)
+                write_to_csv('raw-sql-servers-export.csv', azure_sql_servers, sub)
 
             # get_sql_managed_instances(creds, sub)
             acct, rbac_roles = get_cosmos_db(creds, sub)
