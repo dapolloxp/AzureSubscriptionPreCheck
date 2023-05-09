@@ -436,5 +436,5 @@ if __name__ == '__main__':
 
             # get_sql_managed_instances(creds, sub)
             acct, rbac_roles = get_cosmos_db(creds, sub)
-            if acct is not None:
+            if acct is not None and rbac_roles is not None and len(rbac_roles) > 0:
                 write_to_csv(acct + '-raw-cosmosdb-export.csv', rbac_roles, sub)
