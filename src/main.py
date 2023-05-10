@@ -452,7 +452,9 @@ if __name__ == '__main__':
                 write_to_csv('raw-sql-servers-export.csv', azure_sql_servers, sub)
 
             # get_sql_managed_instances(creds, sub)
+
             acct, rbac_roles, num_cosmos_accounts = get_cosmos_db(creds, sub)
             print(f'Total Cosmos DB Accounts: {num_cosmos_accounts}')
-            if acct is not None:
+            if acct is not None and rbac_roles is not None and len(rbac_roles) > 0:
+
                 write_to_csv(acct + '-raw-cosmosdb-export.csv', rbac_roles, sub)
