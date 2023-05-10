@@ -65,7 +65,7 @@ def _enumerate_cosmosdb_role_assignments(cosmosdb_client: CosmosDBManagementClie
     return cosmos_rbac_role_assignments
 
 
-def get_cosmos_db(credential: AzureCliCredential, subscription_id: str) -> str | list:
+def get_cosmos_db(credential: AzureCliCredential, subscription_id: str) -> str | list | int:
     query = "resources \
             | where type == 'microsoft.documentdb/databaseaccounts' \
             | project name, id, type, tenantId, location, resourceGroup, subscriptionId, properties, identity"
@@ -86,9 +86,9 @@ def get_cosmos_db(credential: AzureCliCredential, subscription_id: str) -> str |
         cosmos_rbac_role_assignments = _enumerate_cosmosdb_role_assignments(cosmosdb_client,
                                                                             results.data[0]['resourceGroup'],
                                                                             results.data[0]['name'])
-        return results.data[0]['name'], cosmos_rbac_role_assignments
+        return results.data[0]['name'], cosmos_rbac_role_assignments, len(results.data)
     else:
-        return None, cosmos_rbac_role_assignments
+        return None, cosmos_rbac_role_assignments, len(results.data)
 
 
 def create_path(subscription: str) -> str:
@@ -241,10 +241,14 @@ def enumerate_rbac_roles(credential: AzureCliCredential, subscription_id: str, o
                                                                        filter=f"principalId eq '{object_id}'")
     roles = []
 
+    # '/subscriptions/021e08c7-8839-4dc6-940d-f4219dc5dcb1/providers/Microsoft.Authorization/roleDefinitions/b7e6dc6d-f1e8-4753-8033-0f276bb0955b'
     # TO DO write output to JSON object
+
     for item in results:
-        dict_obj = {'name': item.name, 'role_definition_id': item.role_definition_id, 'scope': item.scope,
-                    'principal_id': item.principal_id, 'principal_type': item.principal_type}
+        role_def = authorization_client.role_definitions.get_by_id(item.role_definition_id)
+        dict_obj = {'name': item.name, 'role_definition_id': item.role_definition_id, 'role_name': role_def.role_name,
+                    'role_type': role_def.role_type, 'scope': item.scope, 'principal_id': item.principal_id,
+                    'principal_type': item.principal_type}
         if item.scope.startswith("/subscriptions"):
             roles.append(dict_obj)
 
@@ -266,7 +270,7 @@ def get_aks_clusters(credential: AzureCliCredential, subscription_id: str) -> li
     return results.data, len(results.data)
 
 
-def get_all_managed_identities(credential: AzureCliCredential, subscription_id: str) -> list:
+def get_all_managed_identities(credential: AzureCliCredential, subscription_id: str) -> list | int:
     """
     :return: list of all managed identities
     """
@@ -279,7 +283,6 @@ def get_all_managed_identities(credential: AzureCliCredential, subscription_id: 
     | project name, id, type, tenantId, location, resourceGroup, subscriptionId, managedidentity, principalId, identityType"
 
     results = get_resources(credential, query, subscription_id)
-    print(f'Total Managed Identities: {len(results.data)}')
 
     for item in results.data:
 
@@ -293,7 +296,7 @@ def get_all_managed_identities(credential: AzureCliCredential, subscription_id: 
                 print(f'Federated Identity Credentials: {fed_creds_count}')
                 item['federated_identity_credentials'] = fed_creds
 
-    return results.data
+    return results.data, len(results.data)
 
 
 def get_managed_identity_details(credential: AzureCliCredential, subscription_id: str, resource_name: str,
@@ -312,7 +315,7 @@ def get_managed_identity_details(credential: AzureCliCredential, subscription_id
     if result:
         results_dict_list = [item.as_dict() for item in result]
         num_fed_creds = len(results_dict_list)
-    print(f'Federated Identity Credentials for {resource_name}: {num_fed_creds}')
+    print(f'\tFederated Identity Credentials for {resource_name}: {num_fed_creds}')
     return results_dict_list, num_fed_creds
 
 
@@ -415,7 +418,8 @@ if __name__ == '__main__':
 
             ### Get all managed identities and write to csv
 
-            managed_identities = get_all_managed_identities(creds, sub)
+            managed_identities, mi_count = get_all_managed_identities(creds, sub)
+            print(f'Total Managed Identities: {mi_count}')
             if len(managed_identities) > 0:
                 write_to_csv('raw-resources-export.csv', managed_identities, sub)
 
@@ -427,7 +431,7 @@ if __name__ == '__main__':
                         write_to_csv(fn, rbac_roles, sub)
 
             ### Get all key vaults and write to csv
-
+            #
             vaults = get_all_vaults(creds, sub)
 
             if len(vaults) > 0:
@@ -448,6 +452,7 @@ if __name__ == '__main__':
                 write_to_csv('raw-sql-servers-export.csv', azure_sql_servers, sub)
 
             # get_sql_managed_instances(creds, sub)
-            acct, rbac_roles = get_cosmos_db(creds, sub)
+            acct, rbac_roles, num_cosmos_accounts = get_cosmos_db(creds, sub)
+            print(f'Total Cosmos DB Accounts: {num_cosmos_accounts}')
             if acct is not None:
                 write_to_csv(acct + '-raw-cosmosdb-export.csv', rbac_roles, sub)
