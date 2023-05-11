@@ -11,7 +11,7 @@ from azure.cosmos import CosmosClient
 from azure.mgmt.cosmosdb import CosmosDBManagementClient
 from azure.graphrbac import GraphRbacManagementClient
 import azure
-
+import shortuuid
 """
 
 # of Azure RBAC assignments in this sub direct to managed identities (as opposed to via a group)
@@ -308,15 +308,17 @@ def get_managed_identity_details(credential: AzureCliCredential, subscription_id
     :param object_id:
     :return:
     """
-    client = ManagedServiceIdentityClient(credential=credential, subscription_id=subscription_id)
-    result = client.federated_identity_credentials.list(resource_group_name=resource_group, resource_name=resource_name)
-
-    num_fed_creds = 0
-    if result:
-        results_dict_list = [item.as_dict() for item in result]
-        num_fed_creds = len(results_dict_list)
-    print(f'\tFederated Identity Credentials for {resource_name}: {num_fed_creds}')
-    return results_dict_list, num_fed_creds
+    client = ManagedServiceIdentityClient(credential, subscription_id)
+    if (hasattr(client, 'federated_identity_credentials')):
+        num_fed_creds = 0
+        result = client.federated_identity_credentials.list(resource_group, resource_name)
+        if result:
+            results_dict_list = [item.as_dict() for item in result]
+            num_fed_creds = len(results_dict_list)
+        print(f'\tFederated Identity Credentials for {resource_name}: {num_fed_creds}')
+        return results_dict_list, num_fed_creds
+    else:
+        return [], 0
 
 
 # generate a function that writes to a csv file
@@ -377,10 +379,10 @@ def execute_discovery() -> None:
     :return:
     """
     # do all of this for a specific subscription id
-    write_to_csv('raw-vaults-export.csv', get_all_vaults())
-    write_to_csv('raw-resources-export.csv', get_all_managed_identities())
-    write_to_csv('raw-aks-resources-export.csv', get_aks_clusters())
-    write_to_csv('raw-postgres-flexible-servers-export.csv', get_postgres_flexible_servers())
+    write_to_csv('raw-vaults-export-' + suffix + '.csv', get_all_vaults())
+    write_to_csv('raw-resources-export-' + suffix + '.csv', get_all_managed_identities())
+    write_to_csv('raw-aks-resources-export-' + suffix + '.csv', get_aks_clusters())
+    write_to_csv('raw-postgres-flexible-servers-export-' + suffix + '.csv', get_postgres_flexible_servers())
     # get rbac assignments for a specific managed identity within a subscription id
     enumerate_rbac_roles('0efc4cd0-2507-4a4b-959b-96a110fb8583', '/subscriptions/90376dc6-e4a0-49c3-930d-38ee8e2bafa4')
 
@@ -390,6 +392,7 @@ def execute_report() -> None:
     This function will execute the report generation
     :return:
     """
+
 
 
 # Press the green button in the gutter to run the script.
@@ -402,6 +405,8 @@ if __name__ == '__main__':
     sub_list, list_sub_dict = get_subscription_data(creds)
     # print(sub_list)
     # print(list_sub_dict)
+    suffix = datetime.datetime.now().strftime("%Y%m%d") + '-' + shortuuid.uuid()[:8]
+
     for sub in sub_list:
         if sub != '7dc3c9b5-bb4b-4193-8862-7a02bdf9a001':
 
@@ -414,16 +419,16 @@ if __name__ == '__main__':
 
             sub_rbac_roles = enumerate_rbac_roles(creds, sub, None)
             if sub_rbac_roles is not None and len(sub_rbac_roles) > 0:
-                write_to_csv("sub-" + sub[-6:] + '-raw-rbac-assignments-export.csv', sub_rbac_roles, sub)
+                write_to_csv("sub-" + sub[-6:] + '-raw-rbac-assignments-export-' + suffix + '.csv', sub_rbac_roles, sub)
 
             ### Get all managed identities and write to csv
 
             managed_identities, mi_count = get_all_managed_identities(creds, sub)
             print(f'Total Managed Identities: {mi_count}')
             if len(managed_identities) > 0:
-                write_to_csv('raw-resources-export.csv', managed_identities, sub)
+                write_to_csv('raw-resources-export-' + suffix + '.csv', managed_identities, sub)
 
-            fn = 'mi-raw-rbac-assignments-export-' + datetime.datetime.now().strftime("%Y%m%d%H%M%S") + '.csv'
+            fn = 'mi-raw-rbac-assignments-export-' + suffix + '.csv'
             for mi in managed_identities:
                 if not (mi['principalId'] is None or mi['principalId'] == ''):
                     rbac_roles = enumerate_rbac_roles(creds, sub, mi['principalId'])
@@ -435,21 +440,21 @@ if __name__ == '__main__':
             vaults = get_all_vaults(creds, sub)
 
             if len(vaults) > 0:
-                write_to_csv('raw-vaults-export.csv', vaults, sub)
+                write_to_csv('raw-vaults-export-' + suffix + '.csv', vaults, sub)
 
             aks_clusters, num_aks_clusters = get_aks_clusters(creds, sub)
             print(f'Total AKS Clusters: {num_aks_clusters}')
             if len(aks_clusters) > 0:
-                write_to_csv('raw-aks-resources-export.csv', aks_clusters, sub)
+                write_to_csv('raw-aks-resources-export-' + suffix + '.csv', aks_clusters, sub)
 
             postgres_flex_servers = get_postgres_flexible_servers(creds, sub)
             if len(postgres_flex_servers) > 0:
-                write_to_csv('raw-postgres-flexible-servers-export.csv', postgres_flex_servers, sub)
+                write_to_csv('raw-postgres-flexible-servers-export-' + suffix + '.csv', postgres_flex_servers, sub)
 
             azure_sql_servers, num_azure_sql_servers = get_sql_servers(creds, sub)
             print(f'Total Azure SQL DB Servers: {num_azure_sql_servers}')
             if len(azure_sql_servers) > 0:
-                write_to_csv('raw-sql-servers-export.csv', azure_sql_servers, sub)
+                write_to_csv('raw-sql-servers-export-' + suffix + '.csv', azure_sql_servers, sub)
 
             # get_sql_managed_instances(creds, sub)
 
@@ -457,4 +462,4 @@ if __name__ == '__main__':
             print(f'Total Cosmos DB Accounts: {num_cosmos_accounts}')
             if acct is not None and rbac_roles is not None and len(rbac_roles) > 0:
 
-                write_to_csv(acct + '-raw-cosmosdb-export.csv', rbac_roles, sub)
+                write_to_csv(acct + '-raw-cosmosdb-export-' + suffix + '.csv', rbac_roles, sub)
