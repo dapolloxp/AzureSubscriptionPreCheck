@@ -1,7 +1,8 @@
 import csv
 import os
 import datetime
-from azure.mgmt.msi import ManagedServiceIdentityClient
+from azure.mgmt.msi import ManagedServiceIdentityClient  # async libary
+from azure.cli.core import get_default_cli
 import azure.mgmt.resourcegraph as arg
 from azure.identity import AzureCliCredential
 from azure.mgmt.authorization import AuthorizationManagementClient
@@ -12,6 +13,7 @@ from azure.mgmt.cosmosdb import CosmosDBManagementClient
 from azure.graphrbac import GraphRbacManagementClient
 import azure
 import shortuuid
+
 """
 
 # of Azure RBAC assignments in this sub direct to managed identities (as opposed to via a group)
@@ -44,6 +46,35 @@ This is already included in the scope of the “resources-export.csv” export
 This is already included in the scope of the “resources-export.csv” export
 # of Azure Deployment Environments in this sub
 """
+
+
+def _get_mi_associations(credential: AzureCliCredential,
+                         subscription_id: str,
+                         resource_group: str,
+                         resource_name: str) -> list | int:
+    mi_client = ManagedServiceIdentityClient(credential=credential,
+                                             subscription_id=subscription_id,
+                                             api_version="2021-09-30-preview")
+    associated_resources = mi_client.user_assigned_identities.list_associated_resources(
+        resource_group_name=resource_group,
+        resource_name=resource_name)
+    mi_to_resource_associations = {}
+    print(f'Checking associations for {resource_name}')
+    for item in associated_resources:
+        mi_to_resource_associations.setdefault(resource_name, [])
+        payload = {'id': item.id,
+                   'type': item.type,
+                   'name': item.name,
+                   'subscription_id': item.subscription_id,
+                   'resource_group': item.resource_group,
+                   'subscription_display_name': item.subscription_display_name}
+        mi_to_resource_associations.get(resource_name).append(payload)
+
+    if len(mi_to_resource_associations) == 0:
+        print(f'association count: {len(mi_to_resource_associations)}')
+    mi_to_resource_associations_list = list(map(list, mi_to_resource_associations.items()))
+
+    return mi_to_resource_associations_list
 
 
 def _enumerate_cosmosdb_role_assignments(cosmosdb_client: CosmosDBManagementClient, resource_group_name: str,
@@ -287,14 +318,19 @@ def get_all_managed_identities(credential: AzureCliCredential, subscription_id: 
     for item in results.data:
 
         item['federated_identity_credentials'] = []
+        item['associations'] = []
         if item.get('identityType') != 'SystemAssignedIdentity':
             fed_creds, fed_creds_count = get_managed_identity_details(credential,
                                                                       subscription_id,
                                                                       item.get('name'),
                                                                       item.get('resourceGroup'))
             if fed_creds_count > 0:
-                print(f'Federated Identity Credentials: {fed_creds_count}')
+                # print(f'Federated Identity Credentials: {fed_creds_count}')
                 item['federated_identity_credentials'] = fed_creds
+            associations = _get_mi_associations(credential, subscription_id, item.get('resourceGroup'),
+                                                item.get('name'))
+            if len(associations) > 0:
+                item['associations'] = associations[0]
 
     return results.data, len(results.data)
 
@@ -394,7 +430,6 @@ def execute_report() -> None:
     """
 
 
-
 # Press the green button in the gutter to run the script.
 if __name__ == '__main__':
     # pre_check()
@@ -461,5 +496,4 @@ if __name__ == '__main__':
             acct, rbac_roles, num_cosmos_accounts = get_cosmos_db(creds, sub)
             print(f'Total Cosmos DB Accounts: {num_cosmos_accounts}')
             if acct is not None and rbac_roles is not None and len(rbac_roles) > 0:
-
                 write_to_csv(acct + '-raw-cosmosdb-export-' + suffix + '.csv', rbac_roles, sub)
