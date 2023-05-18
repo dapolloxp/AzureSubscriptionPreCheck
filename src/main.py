@@ -51,7 +51,15 @@ This is already included in the scope of the “resources-export.csv” export
 def _get_mi_associations(credential: AzureCliCredential,
                          subscription_id: str,
                          resource_group: str,
-                         resource_name: str) -> list | int:
+                         resource_name: str) -> list | int | list:
+    """
+    Get the list of resources associated with a managed identity
+    :param credential:
+    :param subscription_id:
+    :param resource_group:
+    :param resource_name:
+    :return:
+    """
     mi_client = ManagedServiceIdentityClient(credential=credential,
                                              subscription_id=subscription_id,
                                              api_version="2021-09-30-preview")
@@ -60,6 +68,8 @@ def _get_mi_associations(credential: AzureCliCredential,
         resource_name=resource_name)
     mi_to_resource_associations = {}
     print(f'Checking associations for {resource_name}')
+    association_count = 0
+    subscription_list = []
     for item in associated_resources:
         mi_to_resource_associations.setdefault(resource_name, [])
         payload = {'id': item.id,
@@ -69,12 +79,16 @@ def _get_mi_associations(credential: AzureCliCredential,
                    'resource_group': item.resource_group,
                    'subscription_display_name': item.subscription_display_name}
         mi_to_resource_associations.get(resource_name).append(payload)
+        if resource_name in mi_to_resource_associations:
+            subscription_list.append(item.subscription_id)
+            association_count += 1
+            if subscription_id != item.subscription_id:
+                # count += 1
+                pass
 
-    if len(mi_to_resource_associations) == 0:
-        print(f'association count: {len(mi_to_resource_associations)}')
     mi_to_resource_associations_list = list(map(list, mi_to_resource_associations.items()))
 
-    return mi_to_resource_associations_list
+    return mi_to_resource_associations_list, association_count, subscription_list
 
 
 def _enumerate_cosmosdb_role_assignments(cosmosdb_client: CosmosDBManagementClient, resource_group_name: str,
@@ -319,6 +333,8 @@ def get_all_managed_identities(credential: AzureCliCredential, subscription_id: 
 
         item['federated_identity_credentials'] = []
         item['associations'] = []
+        item['associations_count'] = 0
+        item['associations_sub_ids'] = []
         if item.get('identityType') != 'SystemAssignedIdentity':
             fed_creds, fed_creds_count = get_managed_identity_details(credential,
                                                                       subscription_id,
@@ -327,12 +343,19 @@ def get_all_managed_identities(credential: AzureCliCredential, subscription_id: 
             if fed_creds_count > 0:
                 # print(f'Federated Identity Credentials: {fed_creds_count}')
                 item['federated_identity_credentials'] = fed_creds
-            associations = _get_mi_associations(credential, subscription_id, item.get('resourceGroup'),
-                                                item.get('name'))
+
+            associations, association_count, total_subs = _get_mi_associations(credential,
+                                                                               subscription_id,
+                                                                               item.get('resourceGroup'),
+                                                                               item.get('name'))
             if len(associations) > 0:
                 item['associations'] = associations[0]
+                item['associations_count'] = association_count
+                item['associations_sub_ids'] = total_subs
 
+            print(f'Found {association_count} associations for {item.get("name")} in the follwoing subs: {total_subs}')
     return results.data, len(results.data)
+
 
 
 def get_managed_identity_details(credential: AzureCliCredential, subscription_id: str, resource_name: str,
@@ -457,7 +480,8 @@ if __name__ == '__main__':
                 write_to_csv("sub-" + sub[-6:] + '-raw-rbac-assignments-export-' + suffix + '.csv', sub_rbac_roles, sub)
 
             ### Get all managed identities and write to csv
-
+            # print(f'Found {association_count} associations for {item.get("name")} in the follwoing subs: {total_subs}')
+            # results.data, len(results.data), associations, association_count, total_subs
             managed_identities, mi_count = get_all_managed_identities(creds, sub)
             print(f'Total Managed Identities: {mi_count}')
             if len(managed_identities) > 0:
