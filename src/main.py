@@ -11,8 +11,10 @@ from azure.mgmt.resource import SubscriptionClient
 from azure.cosmos import CosmosClient
 from azure.mgmt.cosmosdb import CosmosDBManagementClient
 from azure.graphrbac import GraphRbacManagementClient
+from azure.core.exceptions import HttpResponseError
 import azure
 import shortuuid
+
 
 """
 
@@ -60,36 +62,42 @@ def _get_mi_associations(credential: AzureCliCredential,
     :param resource_name:
     :return:
     """
-    mi_client = ManagedServiceIdentityClient(credential=credential,
-                                             subscription_id=subscription_id,
-                                             api_version="2021-09-30-preview")
-    associated_resources = mi_client.user_assigned_identities.list_associated_resources(
-        resource_group_name=resource_group,
-        resource_name=resource_name)
-    mi_to_resource_associations = {}
-    print(f'Checking associations for {resource_name}')
-    association_count = 0
-    subscription_list = []
-    for item in associated_resources:
-        mi_to_resource_associations.setdefault(resource_name, [])
-        payload = {'id': item.id,
-                   'type': item.type,
-                   'name': item.name,
-                   'subscription_id': item.subscription_id,
-                   'resource_group': item.resource_group,
-                   'subscription_display_name': item.subscription_display_name}
-        mi_to_resource_associations.get(resource_name).append(payload)
-        if resource_name in mi_to_resource_associations:
-            subscription_list.append(item.subscription_id)
-            association_count += 1
-            if subscription_id != item.subscription_id:
-                # count += 1
-                pass
+    try:
+        mi_client = ManagedServiceIdentityClient(credential=credential,
+                                                subscription_id=subscription_id,
+                                                api_version="2021-09-30-preview")
+        associated_resources = mi_client.user_assigned_identities.list_associated_resources(
+            resource_group_name=resource_group,
+            resource_name=resource_name)
+        mi_to_resource_associations = {}
+        print(f'Checking associations for {resource_name}')
+        association_count = 0
+        subscription_list = []
+        for item in associated_resources:
+            mi_to_resource_associations.setdefault(resource_name, [])
+            payload = {'id': item.id,
+                    'type': item.type,
+                    'name': item.name,
+                    'subscription_id': item.subscription_id,
+                    'resource_group': item.resource_group,
+                    'subscription_display_name': item.subscription_display_name}
+            mi_to_resource_associations.get(resource_name).append(payload)
+            if resource_name in mi_to_resource_associations:
+                subscription_list.append(item.subscription_id)
+                association_count += 1
+                if subscription_id != item.subscription_id:
+                    # count += 1
+                    pass
 
-    mi_to_resource_associations_list = list(map(list, mi_to_resource_associations.items()))
+        mi_to_resource_associations_list = list(map(list, mi_to_resource_associations.items()))
 
-    return mi_to_resource_associations_list, association_count, subscription_list
-
+        return mi_to_resource_associations_list, association_count, subscription_list
+    except HttpResponseError as e:
+        print (e.message)
+        return [], 0, []
+    except:
+        print(f'Unexpected error: {sys.exc_info()[0]}')
+        return [], 0, []
 
 def _enumerate_cosmosdb_role_assignments(cosmosdb_client: CosmosDBManagementClient, resource_group_name: str,
                                          account_name: str) -> list:
