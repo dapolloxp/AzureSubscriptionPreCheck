@@ -15,7 +15,7 @@ from azure.core.exceptions import HttpResponseError
 import azure
 import shortuuid
 
-
+import duckdb
 """
 
 # of Azure RBAC assignments in this sub direct to managed identities (as opposed to via a group)
@@ -49,6 +49,14 @@ This is already included in the scope of the “resources-export.csv” export
 # of Azure Deployment Environments in this sub
 """
 
+
+def createDB() -> duckdb:
+    """
+    Create a duckdb instance
+    :return: duckdb instance
+    """
+    conn = duckdb.connect(':memory:', read_only=False)
+    return conn
 
 def _get_mi_associations(credential: AzureCliCredential,
                          subscription_id: str,
@@ -99,8 +107,9 @@ def _get_mi_associations(credential: AzureCliCredential,
         print(f'Unexpected error: {sys.exc_info()[0]}')
         return [], 0, []
 
+
 def _enumerate_cosmosdb_role_assignments(cosmosdb_client: CosmosDBManagementClient, resource_group_name: str,
-                                         account_name: str) -> list:
+                                         account_name: str, subscription_id: str) -> list:
     """
     Enumerate the Cosmos DB role assignments
     :param cosmosdb_client:
@@ -113,6 +122,9 @@ def _enumerate_cosmosdb_role_assignments(cosmosdb_client: CosmosDBManagementClie
     cosmos_rbac_role_assignments = []
     for r in results:
         role = r.as_dict()
+
+        role['accountName'] = account_name
+        role['subscriptionId'] = subscription_id
         cosmos_rbac_role_assignments.append(role)
 
     return cosmos_rbac_role_assignments
@@ -138,14 +150,15 @@ def get_cosmos_db(credential: AzureCliCredential, subscription_id: str) -> str |
     if len(results.data) > 0:
         cosmos_rbac_role_assignments = _enumerate_cosmosdb_role_assignments(cosmosdb_client,
                                                                             results.data[0]['resourceGroup'],
-                                                                            results.data[0]['name'])
+                                                                            results.data[0]['name'],
+                                                                            subscription_id)
         return results.data[0]['name'], cosmos_rbac_role_assignments, len(results.data)
     else:
         return None, cosmos_rbac_role_assignments, len(results.data)
 
 
-def create_path(subscription: str) -> str:
-    path = os.getcwd() + os.sep + "data" + os.sep + subscription
+def create_path(folder_name: str) -> str:
+    path = os.getcwd() + os.sep + "data" + os.sep + folder_name
     # Check whether the specified path exists or not
 
     if not os.path.exists(path):
@@ -165,7 +178,7 @@ def get_sql_servers(credential: AzureCliCredential, subscription_id: str) -> lis
     | extend activeDirectoryAuth=properties['administrators']['azureADOnlyAuthentication'] \
     | extend administratorType=properties['administrators']['administratorType'] \
     | extend objectid=properties['administrators']['sid'] \
-    | project name, type, location, resourceGroup, subscriptionId, activeDirectoryAuth, administratorType, objectid"
+    | project subscriptionId, name, type, location, resourceGroup, activeDirectoryAuth, administratorType, objectid"
 
     results = get_resources(credential, query, subscription_id)
 
@@ -178,7 +191,7 @@ def get_postgres_flexible_servers(credential: AzureCliCredential, subscription_i
     | extend config=parse_json(properties) \
     | extend activeDirectoryAuth=config['authConfig']['activeDirectoryAuth'] \
     | extend passwordAuth=config['authConfig']['passwordAuth'] \
-    | project name, type, location, resourceGroup, subscriptionId, activeDirectoryAuth, passwordAuth"
+    | project subscriptionId, name, type, location, resourceGroup, activeDirectoryAuth, passwordAuth"
 
     results = get_resources(credential, query, subscription_id)
     print(f'Total Postgres Flexible Servers: {len(results.data)}')
@@ -197,7 +210,7 @@ def get_all_vaults(credential: AzureCliCredential, subscription_id: str) -> list
     | where type == 'microsoft.keyvault/vaults' \
     | extend d=parse_json(properties) \
     | extend access_policies=d['accessPolicies'] \
-    | project name, id, type, tenantId, location, resourceGroup, subscriptionId, access_policies"
+    | project subscriptionId, name, id, type, tenantId, location, resourceGroup, access_policies"
 
     results = get_resources(credential, query, subscription_id)
     print(f'Total Key Vaults: {len(results.data)}')
@@ -299,7 +312,8 @@ def enumerate_rbac_roles(credential: AzureCliCredential, subscription_id: str, o
 
     for item in results:
         role_def = authorization_client.role_definitions.get_by_id(item.role_definition_id)
-        dict_obj = {'name': item.name, 'role_definition_id': item.role_definition_id, 'role_name': role_def.role_name,
+        dict_obj = {'subscriptionId': subscription_id, 'name': item.name, 'role_definition_id': item.role_definition_id,
+                    'role_name': role_def.role_name,
                     'role_type': role_def.role_type, 'scope': item.scope, 'principal_id': item.principal_id,
                     'principal_type': item.principal_type}
         if item.scope.startswith("/subscriptions"):
@@ -317,7 +331,7 @@ def get_aks_clusters(credential: AzureCliCredential, subscription_id: str) -> li
     """
     query = "resources \
     | where type == 'microsoft.containerservice/managedclusters'  \
-    | project name, id, type, tenantId, location, resourceGroup, subscriptionId, identity"
+    | project subscriptionId, name, id, type, tenantId, location, resourceGroup, identity"
     results = get_resources(credential, query, subscription_id)
 
     return results.data, len(results.data)
@@ -333,7 +347,7 @@ def get_all_managed_identities(credential: AzureCliCredential, subscription_id: 
     | extend managedidentity=iff(isnull(identity), properties, identity) \
     | extend identityType=iff(isnull(identity), 'UserAssignedIdentity', 'SystemAssignedIdentity') \
     | extend principalId=parse_json(managedidentity)['principalId'] \
-    | project name, id, type, tenantId, location, resourceGroup, subscriptionId, managedidentity, principalId, identityType"
+    | project subscriptionId, name, id, type, tenantId, location, resourceGroup, managedidentity, principalId, identityType"
 
     results = get_resources(credential, query, subscription_id)
 
@@ -401,9 +415,10 @@ def write_to_csv(file_name: str, data: list, subscription: str, *args, **kwargs)
     """
 
     # TODO - move filename stuff outside of the function. This should just write out data
-    data_dir = create_path(subscription)
-    file_name = subscription[-6:] + "-" + file_name
-    full_file_name = data_dir + os.sep + file_name
+    # data_dir = create_path(subscription)
+    # file_name = subscription[-6:] + "-" + file_name
+    # full_file_name = data_dir + os.sep + file_name
+    full_file_name = file_name
 
     if os.path.isfile(full_file_name):
         with open(full_file_name, 'r', newline='') as csvfile:
@@ -471,8 +486,11 @@ if __name__ == '__main__':
     sub_list, list_sub_dict = get_subscription_data(creds)
     # print(sub_list)
     # print(list_sub_dict)
-    suffix = datetime.datetime.now().strftime("%Y%m%d") + '-' + shortuuid.uuid()[:8]
+    suffix = datetime.datetime.now().strftime("%Y%m%d") + '-' + shortuuid.uuid()[:3]
 
+    path = create_path(f'subscriptions_inventory-{suffix}')
+    # path = os.getcwd() +  data
+    print(path)
     for sub in sub_list:
         if sub != '7dc3c9b5-bb4b-4193-8862-7a02bdf9a001':
 
@@ -485,7 +503,8 @@ if __name__ == '__main__':
 
             sub_rbac_roles = enumerate_rbac_roles(creds, sub, None)
             if sub_rbac_roles is not None and len(sub_rbac_roles) > 0:
-                write_to_csv("sub-" + sub[-6:] + '-raw-rbac-assignments-export-' + suffix + '.csv', sub_rbac_roles, sub)
+                write_to_csv(path + os.sep + "raw-rbac-assignments-export.csv", sub_rbac_roles, sub)
+                #write_to_csv("sub-" + sub[-6:] + '-raw-rbac-assignments-export-' + suffix + '.csv', sub_rbac_roles, sub)
 
             ### Get all managed identities and write to csv
             # print(f'Found {association_count} associations for {item.get("name")} in the follwoing subs: {total_subs}')
@@ -493,39 +512,46 @@ if __name__ == '__main__':
             managed_identities, mi_count = get_all_managed_identities(creds, sub)
             print(f'Total Managed Identities: {mi_count}')
             if len(managed_identities) > 0:
-                write_to_csv('raw-resources-export-' + suffix + '.csv', managed_identities, sub)
+                write_to_csv(path + os.sep + "raw-rbac-assignments-export.csv", sub_rbac_roles, sub)
+                # write_to_csv('raw-resources-export-' + suffix + '.csv', managed_identities, sub)
 
-            fn = 'mi-raw-rbac-assignments-export-' + suffix + '.csv'
+            # fn = 'mi-raw-rbac-assignments-export-' + suffix + '.csv'
+            fn = 'raw-mi-rbac-assignments-export.csv'
             for mi in managed_identities:
                 if not (mi['principalId'] is None or mi['principalId'] == ''):
                     rbac_roles = enumerate_rbac_roles(creds, sub, mi['principalId'])
                     if rbac_roles is not None and len(rbac_roles) > 0:
-                        write_to_csv(fn, rbac_roles, sub)
+                        write_to_csv(path + os.sep + fn, rbac_roles, sub)
 
             ### Get all key vaults and write to csv
             #
             vaults = get_all_vaults(creds, sub)
 
             if len(vaults) > 0:
-                write_to_csv('raw-vaults-export-' + suffix + '.csv', vaults, sub)
+                # write_to_csv(path + os.sep + "raw-rbac-assignments-export.csv", sub_rbac_roles, sub)
+                write_to_csv(path + os.sep + 'raw-vaults-export.csv', vaults, sub)
 
             aks_clusters, num_aks_clusters = get_aks_clusters(creds, sub)
             print(f'Total AKS Clusters: {num_aks_clusters}')
             if len(aks_clusters) > 0:
-                write_to_csv('raw-aks-resources-export-' + suffix + '.csv', aks_clusters, sub)
+                # write_to_csv(path + os.sep + "raw-rbac-assignments-export.csv", sub_rbac_roles, sub)
+                write_to_csv(path + os.sep + 'raw-aks-resources-export.csv', aks_clusters, sub)
 
             postgres_flex_servers = get_postgres_flexible_servers(creds, sub)
             if len(postgres_flex_servers) > 0:
-                write_to_csv('raw-postgres-flexible-servers-export-' + suffix + '.csv', postgres_flex_servers, sub)
+                # write_to_csv(path + os.sep + "raw-rbac-assignments-export.csv", sub_rbac_roles, sub)
+                write_to_csv(path + os.sep + 'raw-postgres-flexible-servers-export.csv', postgres_flex_servers, sub)
 
             azure_sql_servers, num_azure_sql_servers = get_sql_servers(creds, sub)
             print(f'Total Azure SQL DB Servers: {num_azure_sql_servers}')
             if len(azure_sql_servers) > 0:
-                write_to_csv('raw-sql-servers-export-' + suffix + '.csv', azure_sql_servers, sub)
+                # write_to_csv(path + os.sep + "raw-rbac-assignments-export.csv", sub_rbac_roles, sub)
+                write_to_csv(path + os.sep + 'raw-sql-servers-export.csv', azure_sql_servers, sub)
 
             # get_sql_managed_instances(creds, sub)
 
             acct, rbac_roles, num_cosmos_accounts = get_cosmos_db(creds, sub)
             print(f'Total Cosmos DB Accounts: {num_cosmos_accounts}')
             if acct is not None and rbac_roles is not None and len(rbac_roles) > 0:
-                write_to_csv(acct + '-raw-cosmosdb-export-' + suffix + '.csv', rbac_roles, sub)
+                # write_to_csv(path + os.sep + "raw-rbac-assignments-export.csv", sub_rbac_roles, sub)
+                write_to_csv(path + os.sep + 'raw-cosmosdb-export.csv', rbac_roles, sub)
