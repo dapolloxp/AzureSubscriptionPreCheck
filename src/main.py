@@ -203,13 +203,15 @@ def get_subscription_data(credential: DefaultAzureCredential) -> list | list:
     return subs_list, subs_raw
 
 
-def generate_auth_credentials():
+def generate_auth_credentials(tenant_id: str) -> DefaultAzureCredential:
     """
     This function will generate the credentials for the Azure using the ALI Credential
     :return: ALI Credential
     """
-
-    credential = DefaultAzureCredential()
+    if str is not None:
+        credential = DefaultAzureCredential(interactive_browser_tenant_id=tenant_id)
+    else:
+        credential = DefaultAzureCredential()  # uses environment variables
     return credential
 
 
@@ -297,7 +299,7 @@ def get_all_managed_identities(credential: DefaultAzureCredential, subscription_
                 item['associations_count'] = association_count
                 item['associations_sub_ids'] = total_subs
 
-            print(f'Found {association_count} associations for {item.get("name")} in the follwoing subs: {total_subs}')
+            print(f'Found {association_count} associations for {item.get("name")} in the following subs: {total_subs}')
     return results.data, len(results.data)
 
 
@@ -305,6 +307,7 @@ def get_managed_identity_details(credential: DefaultAzureCredential, subscriptio
                                  resource_group: str) -> list | int:
     """
     This function will return the details of a managed identity
+    :param resource_name:
     :param credential:
     :param subscription_id:
     :param object_id:
@@ -422,9 +425,12 @@ def get_cosmosdb_information_inventory(creds, sub, path):
         write_to_csv(path + os.sep + 'raw-cosmosdb-export.csv', rbac_roles, sub)
 
 
-def execute_discovery():
-    creds = generate_auth_credentials()  # do this once
-    sub_list, list_sub_dict = get_subscription_data(creds)
+def execute_discovery(tenant_id: str, subscription_id: list):
+    creds = generate_auth_credentials(tenant_id)  # do this once
+    if subscription_id is None or len(subscription_id) == 0:
+        sub_list, list_sub_dict = get_subscription_data(creds)
+    else:
+        sub_list = subscription_id
 
     suffix = datetime.datetime.now().strftime("%Y%m%d") + '-' + shortuuid.uuid()[:3]
 
@@ -460,4 +466,6 @@ def execute_discovery():
 if __name__ == '__main__':
     # pre_check()
 
-    execute_discovery()
+    # takes the tenant ID and a list of subscription IDs
+    # if both of empty, it will default to all subscriptions in the tenant in the logged in user's context
+    execute_discovery('', [])
