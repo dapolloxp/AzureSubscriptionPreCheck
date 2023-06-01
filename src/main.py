@@ -8,8 +8,12 @@ from azure.mgmt.authorization import AuthorizationManagementClient
 from azure.mgmt.resource import SubscriptionClient
 from azure.mgmt.cosmosdb import CosmosDBManagementClient
 from azure.core.exceptions import HttpResponseError
+import azure.mgmt.devcenter as devcenter
+import json
+import requests
 import shortuuid
 import sys
+
 
 
 def _get_mi_associations(credential: DefaultAzureCredential,
@@ -424,6 +428,76 @@ def get_cosmosdb_information_inventory(creds, sub, path):
     if acct is not None and rbac_roles is not None and len(rbac_roles) > 0:
         write_to_csv(path + os.sep + 'raw-cosmosdb-export.csv', rbac_roles, sub)
 
+# generate the dev centers in a subscription
+def get_devcenters(credential: DefaultAzureCredential, subscription_id: str) -> list | int:
+    """
+    This function will return the number of devboxes in a subscription
+    :param credential: DefaultAzureCredential
+    :param subscription_id: string
+    :return:
+    """
+    query = "resources \
+    | where type == 'microsoft.devcenter/projects' \
+    | project name, id, type, tenantId, location, resourceGroup, subscriptionId, properties['devCenterUri']"
+
+    results = get_resources(credential, query, subscription_id)
+
+    return results, len(results.data)
+
+def get_devcenter_devboxes(credential: DefaultAzureCredential, devcenter_uri: str) -> list | int:
+    """
+    This function will a list devboxes in the specified devcenter
+    :param credential: AzureCliCredential
+    :param subscription_id: string
+    :param location: string
+    :param devcenter_name: string
+    :return:
+    """
+    results = []
+    endpoint = devcenter_uri
+
+    try:
+        # get a token scoped for Dev Center.
+        token = credential.get_token('https://devcenter.azure.com')
+        if token is None:
+            print('Error getting access token')
+            return None, 0
+        
+        # get the devboxes
+        url = f'{endpoint}devboxes?api-version=2023-04-01'
+        response = requests.get(url, headers={'Authorization': f'Bearer {token.token}'})
+        if response.status_code != 200:
+            print(f'Error getting devboxes for {devcenter_uri}')
+            return None, 0
+        
+        arr = json.loads(response.text)["value"]
+        if arr is not None and len(arr) > 0:
+            results.extend(arr)
+
+        return results, len(results)
+    except Exception as e:
+       print(f'Error getting devboxes for {devcenter_uri} - {e}')
+       return None, 0
+
+def get_devbox_inventory(creds: DefaultAzureCredential, subscrption_id: str, path: str):
+    raw_devboxes = []
+    numdevboxes = 0
+    devcenters, num_devcenters = get_devcenters(creds, subscrption_id)
+    for devcenter in devcenters.data:
+        dboxes, count  = get_devcenter_devboxes(creds, devcenter['properties_devCenterUri'])
+        if dboxes is not None and count > 0:
+            for dbox in dboxes:
+                dbox['subscriptionId'] = devcenter['subscriptionId']
+                dbox['devcenterUri'] = devcenter['properties_devCenterUri']
+                raw_devboxes.append(dbox)
+
+            numdevboxes += count
+
+    print(f'Total Devboxes: {numdevboxes}')
+
+    if numdevboxes > 0:
+        write_to_csv(path + os.sep + 'raw-devboxes-export.csv', raw_devboxes, subscrption_id)
+
 
 def execute_discovery(tenant_id: str, subscription_id: list):
     creds = generate_auth_credentials(tenant_id)  # do this once
@@ -461,6 +535,9 @@ def execute_discovery(tenant_id: str, subscription_id: list):
 
             # Get all Cosmos DB Accounts
             get_cosmosdb_information_inventory(creds, sub, path)
+
+            # Get all Dev Centers/Dev Boxes
+            get_devbox_inventory(creds, sub, path)
 
 
 if __name__ == '__main__':

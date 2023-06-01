@@ -20,6 +20,8 @@ azure-mgmt-managementgroups==1.0.0
 azure-mgmt-msi==7.0.0
 azure-mgmt-resource==23.0.0
 azure-mgmt-resourcegraph==8.0.0
+azure-mgmt-devcenter==1.0.0b4
+azure-developer-devcenter==1.0.0b2
 bcrypt==4.0.1
 certifi==2022.12.7
 cffi==1.15.1
