@@ -465,12 +465,10 @@ def get_devcenter_devboxes(credential: DefaultAzureCredential, devcenter_uri: st
         
         # get the devboxes
         url = f'{endpoint}devboxes?api-version=2023-04-01'
-        response = requests.get(url, headers={'Authorization': f'Bearer {token.token}'})
-        if response.status_code != 200:
-            print(f'Error getting devboxes for {devcenter_uri}')
-            return None, 0
+        json_response = make_get_rest_call(url, token)
         
-        arr = json.loads(response.text)["value"]
+        # parse the response JSON
+        arr = json.loads(json_response)["value"]
         if arr is not None and len(arr) > 0:
             results.extend(arr)
 
@@ -497,6 +495,22 @@ def get_devbox_inventory(creds: DefaultAzureCredential, subscrption_id: str, pat
 
     if numdevboxes > 0:
         write_to_csv(path + os.sep + 'raw-devboxes-export.csv', raw_devboxes, subscrption_id)
+
+# use this to make REST API calls. Returns JSON response
+def make_get_rest_call(url: str, token: str) -> str:
+    """
+    This function will make a REST API call to the specified URL
+    :param url: string - the URL to call
+    :param token: string - access token
+    """
+    try:
+        response = requests.get(url, headers={'Authorization': f'Bearer {token.token}'})
+        if response.status_code != 200:
+            throw: Exception(f'Error on GET call to {url} - {response.status_code} - {response.text}')
+
+        return response.text
+    except Exception as e:
+       throw: e
 
 
 def execute_discovery(tenant_id: str, subscription_id: list):
