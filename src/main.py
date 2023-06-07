@@ -3,7 +3,7 @@ import os
 import datetime
 from azure.mgmt.msi import ManagedServiceIdentityClient
 import azure.mgmt.resourcegraph as arg
-from azure.identity import DefaultAzureCredential, AzureCliCredential
+from azure.identity import DefaultAzureCredential, DeviceCodeCredential
 from azure.mgmt.authorization import AuthorizationManagementClient
 from azure.mgmt.resource import SubscriptionClient
 from azure.mgmt.cosmosdb import CosmosDBManagementClient
@@ -512,6 +512,23 @@ def make_get_rest_call(url: str, token: str) -> str:
     except Exception as e:
        throw: e
 
+def make_post_rest_call(url: str, token: str, data: dict) -> str:
+    """
+    This function will make a REST API call to the specified URL using the POST method
+    :param url: string - the URL to call
+    :param token: string - access token
+    :param data: dict - A Dictionary representing the body of the post request. This will be converted to JSON.
+    """
+    try:
+        response = requests.post(url, 
+                                 headers={'Authorization': f'Bearer {token.token}', 
+                                          'Content-Type': 'application/json'}, json=data)
+        if response.status_code != 200:
+            throw: Exception(f'Error on POST call to {url} - {response.status_code} - {response.text}')
+
+        return response.text
+    except Exception as e:
+       throw: e
 
 def execute_discovery(tenant_id: str, subscription_id: list):
     creds = generate_auth_credentials(tenant_id)  # do this once
@@ -553,10 +570,30 @@ def execute_discovery(tenant_id: str, subscription_id: list):
             # Get all Dev Centers/Dev Boxes
             get_devbox_inventory(creds, sub, path)
 
+def test_post_api_call(tenant_id: str):
+    creds = generate_auth_credentials(tenant_id=tenant_id)
+    scope = 'https://graph.microsoft.com'
+    token = creds.get_token(scope)
+
+    # this is the object id of the service principal/managed identity
+    # for testing purposes, 
+    id = os.getenv('AZURE_CLIENT_ID')
+    url = f'https://graph.microsoft.com/beta/directoryObjects/{id}/getMemberGroups'
+
+    data = {'securityEnabledOnly': False}
+    try:
+        json_resp = make_post_rest_call(url, token, data)
+        result = json.loads(json_resp)
+        print(result)
+    except Exception as e:
+        print(e)
+
+
 
 if __name__ == '__main__':
     # pre_check()
 
     # takes the tenant ID and a list of subscription IDs
     # if both of empty, it will default to all subscriptions in the tenant in the logged in user's context
-    execute_discovery('', [])
+    # execute_discovery('', [])
+    test_post_api_call('')
