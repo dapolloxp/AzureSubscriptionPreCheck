@@ -3,7 +3,7 @@ import os
 import datetime
 from azure.mgmt.msi import ManagedServiceIdentityClient
 import azure.mgmt.resourcegraph as arg
-from azure.identity import DefaultAzureCredential, AzureCliCredential
+from azure.identity import DefaultAzureCredential
 from azure.mgmt.authorization import AuthorizationManagementClient
 from azure.mgmt.resource import SubscriptionClient
 from azure.mgmt.cosmosdb import CosmosDBManagementClient
@@ -280,12 +280,24 @@ def get_all_managed_identities(credential: DefaultAzureCredential, subscription_
 
     results = get_resources(credential, query, subscription_id)
 
+
     for item in results.data:
 
+        item['group_memberships'] = []
         item['federated_identity_credentials'] = []
         item['associations'] = []
         item['associations_count'] = 0
         item['associations_sub_ids'] = []
+
+        json_text = make_get_rest_call(
+            f'https://graph.microsoft.com/beta/servicePrincipals/{item["principalId"]}/transitiveMemberOf?$select=displayName',
+            credential.get_token('https://graph.microsoft.com/.default'))
+        json_results = json.loads(json_text)
+        json_results_items = json_results['value']
+        if len(json_results_items) > 0:
+            for json_i in json_results_items:
+                item['group_memberships'].append(json_i['displayName'])
+
         if item.get('identityType') != 'SystemAssignedIdentity':
             fed_creds, fed_creds_count = get_managed_identity_details(credential,
                                                                       subscription_id,
@@ -510,7 +522,8 @@ def make_get_rest_call(url: str, token: str) -> str:
 
         return response.text
     except Exception as e:
-       throw: e
+        print(f'Exception on GET call to {url} - {e}')
+        throw: e
 
 
 def execute_discovery(tenant_id: str, subscription_id: list):
