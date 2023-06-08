@@ -282,40 +282,48 @@ def get_all_managed_identities(credential: DefaultAzureCredential, subscription_
 
 
     for item in results.data:
-
         item['group_memberships'] = []
         item['federated_identity_credentials'] = []
         item['associations'] = []
         item['associations_count'] = 0
         item['associations_sub_ids'] = []
 
-        json_text = make_get_rest_call(
-            f'https://graph.microsoft.com/beta/servicePrincipals/{item["principalId"]}/transitiveMemberOf?$select=displayName',
-            credential.get_token('https://graph.microsoft.com/.default'))
-        json_results = json.loads(json_text)
-        json_results_items = json_results['value']
-        if len(json_results_items) > 0:
-            for json_i in json_results_items:
-                item['group_memberships'].append(json_i['displayName'])
+        try:
+            if (item['principalId'] is None) or (item['principalId'] == ''):
+                raise ValueError('principalId is None or empty')
+            
+            json_text = make_get_rest_call(
+                f'https://graph.microsoft.com/beta/servicePrincipals/{item["principalId"]}/transitiveMemberOf?$select=displayName',
+                credential.get_token('https://graph.microsoft.com/.default'))
+            json_results = json.loads(json_text)
+            json_results_items = json_results['value']
+            if len(json_results_items) > 0:
+                for json_i in json_results_items:
+                    item['group_memberships'].append(json_i['displayName'])
 
-        if item.get('identityType') != 'SystemAssignedIdentity':
-            fed_creds, fed_creds_count = get_managed_identity_details(credential,
-                                                                      subscription_id,
-                                                                      item.get('name'),
-                                                                      item.get('resourceGroup'))
-            if fed_creds_count > 0:
-                item['federated_identity_credentials'] = fed_creds
+            if item.get('identityType') != 'SystemAssignedIdentity':
+                fed_creds, fed_creds_count = get_managed_identity_details(credential,
+                                                                        subscription_id,
+                                                                        item.get('name'),
+                                                                        item.get('resourceGroup'))
+                if fed_creds_count > 0:
+                    item['federated_identity_credentials'] = fed_creds
 
-            associations, association_count, total_subs = _get_mi_associations(credential,
-                                                                               subscription_id,
-                                                                               item.get('resourceGroup'),
-                                                                               item.get('name'))
-            if len(associations) > 0:
-                item['associations'] = associations[0]
-                item['associations_count'] = association_count
-                item['associations_sub_ids'] = total_subs
+                associations, association_count, total_subs = _get_mi_associations(credential,
+                                                                                subscription_id,
+                                                                                item.get('resourceGroup'),
+                                                                                item.get('name'))
+                if len(associations) > 0:
+                    item['associations'] = associations[0]
+                    item['associations_count'] = association_count
+                    item['associations_sub_ids'] = total_subs
 
-            print(f'Found {association_count} associations for {item.get("name")} in the following subs: {total_subs}')
+                print(f'Found {association_count} associations for {item.get("name")} in the following subs: {total_subs}')
+        except HttpResponseError as e:
+            print(f'Error calling Graph API {e}')
+        except Exception as e:
+            print(f'Error: {e}')
+    
     return results.data, len(results.data)
 
 
@@ -511,19 +519,17 @@ def get_devbox_inventory(creds: DefaultAzureCredential, subscrption_id: str, pat
 # use this to make REST API calls. Returns JSON response
 def make_get_rest_call(url: str, token: str) -> str:
     """
-    This function will make a REST API call to the specified URL
+    This function will make a REST API call to the specified URL. Throws HttpResponseError if
+    the response staus code is not 200.
     :param url: string - the URL to call
     :param token: string - access token
     """
-    try:
-        response = requests.get(url, headers={'Authorization': f'Bearer {token.token}'})
-        if response.status_code != 200:
-            throw: Exception(f'Error on GET call to {url} - {response.status_code} - {response.text}')
+    response = requests.get(url, headers={'Authorization': f'Bearer {token.token}'})
+    if response.status_code != 200:
+        raise HttpResponseError(f'Error on GET call to {url} - {response.status_code} - {response.text}')
 
-        return response.text
-    except Exception as e:
-        print(f'Exception on GET call to {url} - {e}')
-        throw: e
+    return response.text
+
 
 
 def execute_discovery(tenant_id: str, subscription_id: list):
