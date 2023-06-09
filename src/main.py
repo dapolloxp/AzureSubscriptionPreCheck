@@ -298,6 +298,7 @@ def enumerate_rbac_roles(credential: DefaultAzureCredential, subscription_id: st
                             'principal_type': item.principal_type}
                 if item.scope.startswith("/subscriptions"):
                     roles.append(dict_obj)
+            print(e)
 
         except Exception as e:
             print(e)
@@ -467,7 +468,7 @@ def get_mi_information_inventory(creds, sub, path):
         if not (mi['principalId'] is None or mi['principalId'] == ''):
             rbac_roles = enumerate_rbac_roles(creds, sub, mi['principalId'])
             if rbac_roles is not None and len(rbac_roles) > 0:
-                write_to_csv(path + os.sep + fn, rbac_roles, sub)
+                write_to_csv(path + os.sep + "raw-rbac-assignments-export.csv", rbac_roles, sub)
 
 
 def get_keyvault_information_inventory(creds, sub, path):
