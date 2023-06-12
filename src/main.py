@@ -10,6 +10,7 @@ from azure.mgmt.cosmosdb import CosmosDBManagementClient
 from azure.core.exceptions import HttpResponseError
 import azure.mgmt.devcenter as devcenter
 import functools
+import re
 import json
 import requests
 import shortuuid
@@ -260,8 +261,7 @@ def enumerate_rbac_roles(credential: DefaultAzureCredential, subscription_id: st
         try:
             # Identity not found.
             json_text = ""
-            if (item.principal_id == '0efc4cd0-2507-4a4b-959b-96a110fb8583'):
-                print("test")
+
             if (item.principal_id is None) or (item.principal_id == ''):
                 raise ValueError('principalId is None or empty')
             if item.principal_type == 'User':
@@ -281,7 +281,7 @@ def enumerate_rbac_roles(credential: DefaultAzureCredential, subscription_id: st
             print(obj_display)
 
             role_def = authorization_client.role_definitions.get_by_id(item.role_definition_id)
-            dict_obj = {'subscriptionId': subscription_id, 'name': obj_display,
+            dict_obj = {'subscriptionId': subscription_id, 'name': obj_display, 'assignment_id': item.name,
                         'role_definition_id': item.role_definition_id,
                         'role_name': role_def.role_name,
                         'role_type': role_def.role_type, 'scope': item.scope, 'principal_id': item.principal_id,
@@ -289,15 +289,6 @@ def enumerate_rbac_roles(credential: DefaultAzureCredential, subscription_id: st
             if item.scope.startswith("/subscriptions"):
                 roles.append(dict_obj)
         except HttpResponseError as e:
-            if e.status_code == '404':
-                role_def = authorization_client.role_definitions.get_by_id(item.role_definition_id)
-                dict_obj = {'subscriptionId': subscription_id, 'name': "Identity Not Found",
-                            'role_definition_id': item.role_definition_id,
-                            'role_name': role_def.role_name,
-                            'role_type': role_def.role_type, 'scope': item.scope, 'principal_id': item.principal_id,
-                            'principal_type': item.principal_type}
-                if item.scope.startswith("/subscriptions"):
-                    roles.append(dict_obj)
             print(e)
 
         except Exception as e:
@@ -444,10 +435,10 @@ def write_to_csv(full_file_name: str, data: list, subscription: str, *args, **kw
                 writer.writerow(row)
 
 
-def get_sub_rbac_roles(creds, sub, path):
-    sub_rbac_roles = enumerate_rbac_roles(creds, sub, None)
-    if sub_rbac_roles is not None and len(sub_rbac_roles) > 0:
-        write_to_csv(path + os.sep + "raw-rbac-assignments-export.csv", sub_rbac_roles, sub)
+# def get_sub_rbac_roles(creds, sub, path):
+#     sub_rbac_roles = enumerate_rbac_roles(creds, sub, None)
+#     if sub_rbac_roles is not None and len(sub_rbac_roles) > 0:
+#         write_to_csv(path + os.sep + "raw-rbac-assignments-export.csv", sub_rbac_roles, sub)
 
 
 def get_mi_information_inventory(creds, sub, path):
@@ -468,7 +459,7 @@ def get_mi_information_inventory(creds, sub, path):
         if not (mi['principalId'] is None or mi['principalId'] == ''):
             rbac_roles = enumerate_rbac_roles(creds, sub, mi['principalId'])
             if rbac_roles is not None and len(rbac_roles) > 0:
-                write_to_csv(path + os.sep + "raw-rbac-assignments-export.csv", rbac_roles, sub)
+                write_to_csv(path + os.sep + "raw-mi-rbac-assignments-export.csv", rbac_roles, sub)
 
 
 def get_keyvault_information_inventory(creds, sub, path):
