@@ -15,10 +15,12 @@ import json
 import requests
 import shortuuid
 import sys
-import asyncio
-from kiota_authentication_azure.azure_identity_authentication_provider import AzureIdentityAuthenticationProvider
-from msgraph import GraphRequestAdapter
-from msgraph import GraphServiceClient
+
+
+# import asyncio
+# from kiota_authentication_azure.azure_identity_authentication_provider import AzureIdentityAuthenticationProvider
+# from msgraph import GraphRequestAdapter
+# from msgraph import GraphServiceClient
 
 
 def _get_mi_associations(credential: DefaultAzureCredential,
@@ -200,17 +202,17 @@ def get_resources(credential: DefaultAzureCredential, str_query: str, subscripti
     return arg_results
 
 
-async def get_user(credential: DefaultAzureCredential, objectid: str):
-    scopes = ['https://graph.microsoft.com/.default']
-    auth_provider = AzureIdentityAuthenticationProvider(credential, scopes=scopes)
-    request_adapter = GraphRequestAdapter(auth_provider)
-    client = GraphServiceClient(request_adapter)
-
-    user = await client.service_principals.by_service_principal_id(objectid).get()
-
-    # aks-blob-read
-    if user:
-        print(user.display_name)
+# async def get_user(credential: DefaultAzureCredential, objectid: str):
+#     scopes = ['https://graph.microsoft.com/.default']
+#     auth_provider = AzureIdentityAuthenticationProvider(credential, scopes=scopes)
+#     request_adapter = GraphRequestAdapter(auth_provider)
+#     client = GraphServiceClient(request_adapter)
+#
+#     user = await client.service_principals.by_service_principal_id(objectid).get()
+#
+#     # aks-blob-read
+#     if user:
+#         print(user.display_name)
 
 
 def get_subscription_data(credential: DefaultAzureCredential) -> list | list:
