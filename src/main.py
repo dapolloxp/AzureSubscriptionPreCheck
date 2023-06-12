@@ -9,11 +9,18 @@ from azure.mgmt.resource import SubscriptionClient
 from azure.mgmt.cosmosdb import CosmosDBManagementClient
 from azure.core.exceptions import HttpResponseError
 import azure.mgmt.devcenter as devcenter
+import functools
+import re
 import json
 import requests
 import shortuuid
 import sys
 
+
+# import asyncio
+# from kiota_authentication_azure.azure_identity_authentication_provider import AzureIdentityAuthenticationProvider
+# from msgraph import GraphRequestAdapter
+# from msgraph import GraphServiceClient
 
 
 def _get_mi_associations(credential: DefaultAzureCredential,
@@ -195,6 +202,19 @@ def get_resources(credential: DefaultAzureCredential, str_query: str, subscripti
     return arg_results
 
 
+# async def get_user(credential: DefaultAzureCredential, objectid: str):
+#     scopes = ['https://graph.microsoft.com/.default']
+#     auth_provider = AzureIdentityAuthenticationProvider(credential, scopes=scopes)
+#     request_adapter = GraphRequestAdapter(auth_provider)
+#     client = GraphServiceClient(request_adapter)
+#
+#     user = await client.service_principals.by_service_principal_id(objectid).get()
+#
+#     # aks-blob-read
+#     if user:
+#         print(user.display_name)
+
+
 def get_subscription_data(credential: DefaultAzureCredential) -> list | list:
     """
     returns subscription list and subscription raw data. This returns only subscription that a user has access to.
@@ -238,15 +258,43 @@ def enumerate_rbac_roles(credential: DefaultAzureCredential, subscription_id: st
         results = authorization_client.role_assignments.list_for_scope(scope='/subscriptions/' + subscription_id,
                                                                        filter=f"principalId eq '{object_id}'")
     roles = []
-
+    access_token = credential.get_token('https://graph.microsoft.com/.default')
     for item in results:
-        role_def = authorization_client.role_definitions.get_by_id(item.role_definition_id)
-        dict_obj = {'subscriptionId': subscription_id, 'name': item.name, 'role_definition_id': item.role_definition_id,
-                    'role_name': role_def.role_name,
-                    'role_type': role_def.role_type, 'scope': item.scope, 'principal_id': item.principal_id,
-                    'principal_type': item.principal_type}
-        if item.scope.startswith("/subscriptions"):
-            roles.append(dict_obj)
+        try:
+            # Identity not found.
+            json_text = ""
+
+            if (item.principal_id is None) or (item.principal_id == ''):
+                raise ValueError('principalId is None or empty')
+            if item.principal_type == 'User':
+                json_text = make_get_rest_call(
+                    f'https://graph.microsoft.com/beta/users/{item.principal_id}?$select=displayName',
+                    access_token)
+            elif item.principal_type == 'ServicePrincipal':
+                json_text = make_get_rest_call(
+                    f'https://graph.microsoft.com/beta/servicePrincipals/{item.principal_id}?$select=displayName',
+                    access_token)
+            elif item.principal_type == 'Group':
+                json_text = make_get_rest_call(
+                    f'https://graph.microsoft.com/beta/groups/{item.principal_id}?$select=displayName',
+                    access_token)
+            json_results = json.loads(json_text)
+            obj_display = json_results['displayName']
+            print(obj_display)
+
+            role_def = authorization_client.role_definitions.get_by_id(item.role_definition_id)
+            dict_obj = {'subscriptionId': subscription_id, 'name': obj_display, 'assignment_id': item.name,
+                        'role_definition_id': item.role_definition_id,
+                        'role_name': role_def.role_name,
+                        'role_type': role_def.role_type, 'scope': item.scope, 'principal_id': item.principal_id,
+                        'principal_type': item.principal_type}
+            if item.scope.startswith("/subscriptions"):
+                roles.append(dict_obj)
+        except HttpResponseError as e:
+            print(e)
+
+        except Exception as e:
+            print(e)
 
     return roles
 
@@ -280,7 +328,6 @@ def get_all_managed_identities(credential: DefaultAzureCredential, subscription_
 
     results = get_resources(credential, query, subscription_id)
 
-
     for item in results.data:
         item['group_memberships'] = []
         item['federated_identity_credentials'] = []
@@ -291,7 +338,7 @@ def get_all_managed_identities(credential: DefaultAzureCredential, subscription_
         try:
             if (item['principalId'] is None) or (item['principalId'] == ''):
                 raise ValueError('principalId is None or empty')
-            
+
             json_text = make_get_rest_call(
                 f'https://graph.microsoft.com/beta/servicePrincipals/{item["principalId"]}/transitiveMemberOf?$select=displayName',
                 credential.get_token('https://graph.microsoft.com/.default'))
@@ -303,27 +350,28 @@ def get_all_managed_identities(credential: DefaultAzureCredential, subscription_
 
             if item.get('identityType') != 'SystemAssignedIdentity':
                 fed_creds, fed_creds_count = get_managed_identity_details(credential,
-                                                                        subscription_id,
-                                                                        item.get('name'),
-                                                                        item.get('resourceGroup'))
+                                                                          subscription_id,
+                                                                          item.get('name'),
+                                                                          item.get('resourceGroup'))
                 if fed_creds_count > 0:
                     item['federated_identity_credentials'] = fed_creds
 
                 associations, association_count, total_subs = _get_mi_associations(credential,
-                                                                                subscription_id,
-                                                                                item.get('resourceGroup'),
-                                                                                item.get('name'))
+                                                                                   subscription_id,
+                                                                                   item.get('resourceGroup'),
+                                                                                   item.get('name'))
                 if len(associations) > 0:
                     item['associations'] = associations[0]
                     item['associations_count'] = association_count
                     item['associations_sub_ids'] = total_subs
 
-                print(f'Found {association_count} associations for {item.get("name")} in the following subs: {total_subs}')
+                print(
+                    f'Found {association_count} associations for {item.get("name")} in the following subs: {total_subs}')
         except HttpResponseError as e:
             print(f'Error calling Graph API {e}')
         except Exception as e:
             print(f'Error: {e}')
-    
+
     return results.data, len(results.data)
 
 
@@ -389,10 +437,10 @@ def write_to_csv(full_file_name: str, data: list, subscription: str, *args, **kw
                 writer.writerow(row)
 
 
-def get_sub_rbac_roles(creds, sub, path):
-    sub_rbac_roles = enumerate_rbac_roles(creds, sub, None)
-    if sub_rbac_roles is not None and len(sub_rbac_roles) > 0:
-        write_to_csv(path + os.sep + "raw-rbac-assignments-export.csv", sub_rbac_roles, sub)
+# def get_sub_rbac_roles(creds, sub, path):
+#     sub_rbac_roles = enumerate_rbac_roles(creds, sub, None)
+#     if sub_rbac_roles is not None and len(sub_rbac_roles) > 0:
+#         write_to_csv(path + os.sep + "raw-rbac-assignments-export.csv", sub_rbac_roles, sub)
 
 
 def get_mi_information_inventory(creds, sub, path):
@@ -413,7 +461,7 @@ def get_mi_information_inventory(creds, sub, path):
         if not (mi['principalId'] is None or mi['principalId'] == ''):
             rbac_roles = enumerate_rbac_roles(creds, sub, mi['principalId'])
             if rbac_roles is not None and len(rbac_roles) > 0:
-                write_to_csv(path + os.sep + fn, rbac_roles, sub)
+                write_to_csv(path + os.sep + "raw-mi-rbac-assignments-export.csv", rbac_roles, sub)
 
 
 def get_keyvault_information_inventory(creds, sub, path):
@@ -448,6 +496,7 @@ def get_cosmosdb_information_inventory(creds, sub, path):
     if acct is not None and rbac_roles is not None and len(rbac_roles) > 0:
         write_to_csv(path + os.sep + 'raw-cosmosdb-export.csv', rbac_roles, sub)
 
+
 # generate the dev centers in a subscription
 def get_devcenters(credential: DefaultAzureCredential, subscription_id: str) -> list | int:
     """
@@ -463,6 +512,7 @@ def get_devcenters(credential: DefaultAzureCredential, subscription_id: str) -> 
     results = get_resources(credential, query, subscription_id)
 
     return results, len(results.data)
+
 
 def get_devcenter_devboxes(credential: DefaultAzureCredential, devcenter_uri: str) -> list | int:
     """
@@ -482,11 +532,11 @@ def get_devcenter_devboxes(credential: DefaultAzureCredential, devcenter_uri: st
         if token is None:
             print('Error getting access token')
             return None, 0
-        
+
         # get the devboxes
         url = f'{endpoint}devboxes?api-version=2023-04-01'
         json_response = make_get_rest_call(url, token)
-        
+
         # parse the response JSON
         arr = json.loads(json_response)["value"]
         if arr is not None and len(arr) > 0:
@@ -494,15 +544,16 @@ def get_devcenter_devboxes(credential: DefaultAzureCredential, devcenter_uri: st
 
         return results, len(results)
     except Exception as e:
-       print(f'Error getting devboxes for {devcenter_uri} - {e}')
-       return None, 0
+        print(f'Error getting devboxes for {devcenter_uri} - {e}')
+        return None, 0
+
 
 def get_devbox_inventory(creds: DefaultAzureCredential, subscrption_id: str, path: str):
     raw_devboxes = []
     numdevboxes = 0
     devcenters, num_devcenters = get_devcenters(creds, subscrption_id)
     for devcenter in devcenters.data:
-        dboxes, count  = get_devcenter_devboxes(creds, devcenter['properties_devCenterUri'])
+        dboxes, count = get_devcenter_devboxes(creds, devcenter['properties_devCenterUri'])
         if dboxes is not None and count > 0:
             for dbox in dboxes:
                 dbox['subscriptionId'] = devcenter['subscriptionId']
@@ -515,6 +566,7 @@ def get_devbox_inventory(creds: DefaultAzureCredential, subscrption_id: str, pat
 
     if numdevboxes > 0:
         write_to_csv(path + os.sep + 'raw-devboxes-export.csv', raw_devboxes, subscrption_id)
+
 
 # use this to make REST API calls. Returns JSON response
 def make_get_rest_call(url: str, token: str) -> str:
@@ -529,7 +581,6 @@ def make_get_rest_call(url: str, token: str) -> str:
         raise HttpResponseError(f'Error on GET call to {url} - {response.status_code} - {response.text}')
 
     return response.text
-
 
 
 def execute_discovery(tenant_id: str, subscription_id: list):
