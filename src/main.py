@@ -17,12 +17,6 @@ import shortuuid
 import sys
 
 
-# import asyncio
-# from kiota_authentication_azure.azure_identity_authentication_provider import AzureIdentityAuthenticationProvider
-# from msgraph import GraphRequestAdapter
-# from msgraph import GraphServiceClient
-
-
 def _get_mi_associations(credential: DefaultAzureCredential,
                          subscription_id: str,
                          resource_group: str,
@@ -87,7 +81,6 @@ def _enumerate_cosmosdb_role_assignments(cosmosdb_client: CosmosDBManagementClie
     cosmos_rbac_role_assignments = []
     for r in results:
         role = r.as_dict()
-
         role['accountName'] = account_name
         role['subscriptionId'] = subscription_id
         cosmos_rbac_role_assignments.append(role)
@@ -200,20 +193,6 @@ def get_resources(credential: DefaultAzureCredential, str_query: str, subscripti
     arg_results = arg_client.resources(arg_query)
 
     return arg_results
-
-
-# async def get_user(credential: DefaultAzureCredential, objectid: str):
-#     scopes = ['https://graph.microsoft.com/.default']
-#     auth_provider = AzureIdentityAuthenticationProvider(credential, scopes=scopes)
-#     request_adapter = GraphRequestAdapter(auth_provider)
-#     client = GraphServiceClient(request_adapter)
-#
-#     user = await client.service_principals.by_service_principal_id(objectid).get()
-#
-#     # aks-blob-read
-#     if user:
-#         print(user.display_name)
-
 
 def get_subscription_data(credential: DefaultAzureCredential) -> list | list:
     """
@@ -386,7 +365,7 @@ def get_managed_identity_details(credential: DefaultAzureCredential, subscriptio
     :return:
     """
     client = ManagedServiceIdentityClient(credential, subscription_id)
-    if (hasattr(client, 'federated_identity_credentials')):
+    if hasattr(client, 'federated_identity_credentials'):
         num_fed_creds = 0
         result = client.federated_identity_credentials.list(resource_group, resource_name)
         if result:
@@ -398,12 +377,10 @@ def get_managed_identity_details(credential: DefaultAzureCredential, subscriptio
         return [], 0
 
 
-# generate a function that writes to a csv file
-
 def write_to_csv(full_file_name: str, data: list, subscription: str, *args, **kwargs) -> None:
     """
     @param fname: string, name of file to write
-    @param data: list of list of items
+    @param data: list of items
     Write data to file
     :param subscription:
     :param file_name:
@@ -435,12 +412,6 @@ def write_to_csv(full_file_name: str, data: list, subscription: str, *args, **kw
             writer.writeheader()
             for row in data:
                 writer.writerow(row)
-
-
-# def get_sub_rbac_roles(creds, sub, path):
-#     sub_rbac_roles = enumerate_rbac_roles(creds, sub, None)
-#     if sub_rbac_roles is not None and len(sub_rbac_roles) > 0:
-#         write_to_csv(path + os.sep + "raw-rbac-assignments-export.csv", sub_rbac_roles, sub)
 
 
 def get_mi_information_inventory(creds, sub, path):
