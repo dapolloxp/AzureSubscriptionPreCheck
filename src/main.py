@@ -15,6 +15,7 @@ import json
 import requests
 import shortuuid
 import sys
+import argparse
 
 
 def _get_mi_associations(credential: DefaultAzureCredential,
@@ -194,6 +195,7 @@ def get_resources(credential: DefaultAzureCredential, str_query: str, subscripti
 
     return arg_results
 
+
 def get_subscription_data(credential: DefaultAzureCredential) -> list | list:
     """
     returns subscription list and subscription raw data. This returns only subscription that a user has access to.
@@ -259,7 +261,7 @@ def enumerate_rbac_roles(credential: DefaultAzureCredential, subscription_id: st
                     access_token)
             json_results = json.loads(json_text)
             obj_display = json_results['displayName']
-            print(obj_display)
+            # print(obj_display)
 
             role_def = authorization_client.role_definitions.get_by_id(item.role_definition_id)
             dict_obj = {'subscriptionId': subscription_id, 'name': obj_display, 'assignment_id': item.name,
@@ -418,16 +420,12 @@ def get_mi_information_inventory(creds, sub, path):
     sub_rbac_roles = enumerate_rbac_roles(creds, sub, None)
     if sub_rbac_roles is not None and len(sub_rbac_roles) > 0:
         write_to_csv(path + os.sep + "raw-rbac-assignments-export.csv", sub_rbac_roles, sub)
-        # write_to_csv("sub-" + sub[-6:] + '-raw-rbac-assignments-export-' + suffix + '.csv', sub_rbac_roles, sub)
 
     managed_identities, mi_count = get_all_managed_identities(creds, sub)
     print(f'Total Managed Identities: {mi_count}')
     if len(managed_identities) > 0:
         write_to_csv(path + os.sep + "raw-resources-export.csv", managed_identities, sub)
-        # write_to_csv('raw-resources-export-' + suffix + '.csv', managed_identities, sub)
 
-    # fn = 'mi-raw-rbac-assignments-export-' + suffix + '.csv'
-    fn = 'raw-mi-rbac-assignments-export.csv'
     for mi in managed_identities:
         if not (mi['principalId'] is None or mi['principalId'] == ''):
             rbac_roles = enumerate_rbac_roles(creds, sub, mi['principalId'])
@@ -600,4 +598,28 @@ if __name__ == '__main__':
 
     # takes the tenant ID and a list of subscription IDs
     # if both of empty, it will default to all subscriptions in the tenant in the logged in user's context
-    execute_discovery('', [])
+    parser = argparse.ArgumentParser(description='Azure Subscription Inventory.')
+
+    # Add arguments
+    parser.add_argument('--tenant_id', type=str, help='Azure tenant ID.', required=True)
+    parser.add_argument('--sub_list', type=str, help='File containing list of subscriptions.')
+
+    # Parse the command-line arguments
+    args = parser.parse_args()
+
+    # Access the values of the arguments
+    tenant_id = args.tenant_id
+    subscription_list = args.sub_list
+
+    subs = []
+    # check if file name exists
+    if subscription_list is not None:
+        try:
+            # check for existence of file
+            with open(subscription_list, 'r') as f:
+                subs = f.read().splitlines()
+        except FileNotFoundError:
+            print(f'File {subscription_list} not found.')
+    else:
+        print('No file name provided. Using subscription list from Azure profile.')
+    execute_discovery('', subs)
