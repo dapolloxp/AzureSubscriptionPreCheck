@@ -194,6 +194,7 @@ def get_resources(credential: DefaultAzureCredential, str_query: str, subscripti
 
     return arg_results
 
+
 def get_subscription_data(credential: DefaultAzureCredential) -> list | list:
     """
     returns subscription list and subscription raw data. This returns only subscription that a user has access to.
@@ -259,7 +260,7 @@ def enumerate_rbac_roles(credential: DefaultAzureCredential, subscription_id: st
                     access_token)
             json_results = json.loads(json_text)
             obj_display = json_results['displayName']
-            print(obj_display)
+            # print(obj_display)
 
             role_def = authorization_client.role_definitions.get_by_id(item.role_definition_id)
             dict_obj = {'subscriptionId': subscription_id, 'name': obj_display, 'assignment_id': item.name,
@@ -358,10 +359,10 @@ def get_managed_identity_details(credential: DefaultAzureCredential, subscriptio
                                  resource_group: str) -> list | int:
     """
     This function will return the details of a managed identity
+    :param resource_group:
     :param resource_name:
     :param credential:
     :param subscription_id:
-    :param object_id:
     :return:
     """
     client = ManagedServiceIdentityClient(credential, subscription_id)
@@ -382,6 +383,7 @@ def write_to_csv(full_file_name: str, data: list, subscription: str, *args, **kw
     @param fname: string, name of file to write
     @param data: list of items
     Write data to file
+    :param full_file_name:
     :param subscription:
     :param file_name:
 
