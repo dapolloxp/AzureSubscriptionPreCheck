@@ -654,4 +654,4 @@ if __name__ == '__main__':
     else:
         print('No file name provided. Using subscription list from Azure profile.')
         logging.warning('No file name provided. Using subscription list from Azure profile.')
-    execute_discovery('', subs, suffix)
+    execute_discovery(tenant_id, subs, suffix)
