@@ -630,42 +630,47 @@ if __name__ == '__main__':
     parser.add_argument('-d', action='store_true', help='Debug logging')
     parser.add_argument('--debug', action='store_true', help='Debug logging')
 
-    # Parse the command-line arguments
-    args = parser.parse_args()
+    try:
+        # Parse the command-line arguments
+        args = parser.parse_args()
 
-    # Set the logging level based on the arguments
-    verbose = args.v or args.verbose
-    debug = args.d or args.debug
+        # Set the logging level based on the arguments
+        verbose = args.v or args.verbose
+        debug = args.d or args.debug
 
-    if debug:
-        level = logging.DEBUG
-    elif verbose:
-        level = logging.INFO
-    else:
-        level = logging.WARNING
+        if debug:
+            level = logging.DEBUG
+        elif verbose:
+            level = logging.INFO
+        else:
+            level = logging.WARNING
 
-    # Access the values of the arguments
-    tenant_id = args.tenant_id
-    subscription_list = args.sub_list
+        # Access the values of the arguments
+        tenant_id = args.tenant_id
+        subscription_list = args.sub_list
 
-    # configure logging
-    suffix = datetime.datetime.now().strftime("%Y%m%d") + '-' + shortuuid.uuid()[:3]
-    log_path = create_path(f'logs')
-    logger = create_custom_logger('azure_sub_logger', level, log_path, suffix)
+        # configure logging
+        suffix = datetime.datetime.now().strftime("%Y%m%d") + '-' + shortuuid.uuid()[:3]
+        log_path = create_path(f'logs')
+        logger = create_custom_logger('azure_sub_logger', level, log_path, suffix)
 
-    print('Creating inventory for tenant: ' + tenant_id)
-    logger.info('Creating inventory for tenant: ' + tenant_id)
+        print('Creating inventory for tenant: ' + tenant_id)
+        logger.info('Creating inventory for tenant: ' + tenant_id)
 
-    subs = []
-    # check if file name exists
-    if subscription_list is not None:
-        try:
-            # check for existence of file
-            with open(subscription_list, 'r') as f:
-                subs = f.read().splitlines()
-        except FileNotFoundError:
-            print(f'File {subscription_list} not found.')
-    else:
-        print('No file name provided. Using subscription list from Azure profile.')
-        logging.warning('No file name provided. Using subscription list from Azure profile.')
-    execute_discovery(tenant_id, subs, suffix)
+        subs = []
+        # check if file name exists
+        if subscription_list is not None:
+            try:
+                # check for existence of file
+                with open(subscription_list, 'r') as f:
+                    subs = f.read().splitlines()
+            except FileNotFoundError:
+                print(f'File {subscription_list} not found.')
+        else:
+            print('No file name provided. Using subscription list from Azure profile.')
+            logging.warning('No file name provided. Using subscription list from Azure profile.')
+        execute_discovery(tenant_id, subs, suffix)
+    except Exception as e:
+        print(e)
+        logger.error(e)
+    
