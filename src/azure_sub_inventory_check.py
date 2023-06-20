@@ -296,7 +296,6 @@ def get_aks_clusters(credential: DefaultAzureCredential, subscription_id: str) -
     | where type == 'microsoft.containerservice/managedclusters'  \
     | project subscriptionId, name, id, type, tenantId, location, resourceGroup, identity"
     # log = logging.getLogger("azure_sub_logger")
-    logger.info(f'Getting all AKS clusters  for subscription {subscription_id}')
     logger.info(f'Getting all AKS clusters for subscription {subscription_id}')
     results = get_resources(credential, query, subscription_id)
 
@@ -565,9 +564,9 @@ def make_get_rest_call(url: str, token: str) -> str:
     return response.text
 
 
-def create_custom_logger(name: str, level: str, log_path: str, suffix: str) -> logging.Logger:
+def create_custom_logger(name: str, level: int, log_path: str, suffix: str) -> logging.Logger:
     logging.basicConfig(filename=f'{log_path + os.sep}subscriptions_inventory-{suffix}.log', filemode='w',
-                        level=logging.WARNING, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+                        format='%(asctime)s - %(levelname)s - %(message)s')
     logger = logging.getLogger(name)
     logger.setLevel(level)
     return logger
@@ -582,9 +581,10 @@ def execute_discovery(tenant_id: str, subscription_id: list, suffix: str):
     else:
         sub_list = subscription_id
 
+    # Do we really want to print a warning in the log when it's really just info?
     logger.warning(path)
-
     logger.info(path)
+    
     for sub in sub_list:
         if sub != '7dc3c9b5-bb4b-4193-8862-7a02bdf9a001':
             # Print Subscription Header
@@ -625,19 +625,33 @@ if __name__ == '__main__':
     # Add arguments
     parser.add_argument('--tenant_id', type=str, help='Azure tenant ID.', required=True)
     parser.add_argument('--sub_list', type=str, help='File containing list of subscriptions.')
+    parser.add_argument('-v', action='store_true', help='Verbose logging')
+    parser.add_argument('--verbose', action='store_true', help='Verbose logging')
+    parser.add_argument('-d', action='store_true', help='Debug logging')
+    parser.add_argument('--debug', action='store_true', help='Debug logging')
 
     # Parse the command-line arguments
     args = parser.parse_args()
+
+    # Set the logging level based on the arguments
+    verbose = args.v or args.verbose
+    debug = args.d or args.debug
+
+    if debug:
+        level = logging.DEBUG
+    elif verbose:
+        level = logging.INFO
+    else:
+        level = logging.WARNING
 
     # Access the values of the arguments
     tenant_id = args.tenant_id
     subscription_list = args.sub_list
 
     # configure logging
-
     suffix = datetime.datetime.now().strftime("%Y%m%d") + '-' + shortuuid.uuid()[:3]
     log_path = create_path(f'logs')
-    logger = create_custom_logger('azure_sub_logger', logging.DEBUG, log_path, suffix)
+    logger = create_custom_logger('azure_sub_logger', level, log_path, suffix)
 
     print('Creating inventory for tenant: ' + tenant_id)
     logger.info('Creating inventory for tenant: ' + tenant_id)
