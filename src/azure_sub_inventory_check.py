@@ -166,21 +166,22 @@ def get_mysql_flexible_servers(credential: DefaultAzureCredential, subscription_
 
     accesstoken = credential.get_token('https://management.azure.com/.default')
 
-    for flxserverinfo in results.data:
-        #construct the URL:
-        sub_id = flxserverinfo['subscriptionId']
-        rg = flxserverinfo['resourceGroup']
-        srvrname = flxserverinfo['name']
-        url = f"https://management.azure.com/subscriptions/{sub_id}/resourceGroups/{rg}/providers/Microsoft.DBforMySQL/flexibleServers/{srvrname}/configurations?api-version=2021-05-01"
-        try:
-            jsonresult = make_get_rest_call(url, accesstoken.token)
-            configs = json.loads(jsonresult)
-            print(f'***************      CONFIGURATION FOR {srvrname}      **********************************')
-            print(jsonreseult)
-        except HttpResponseError as e:
-            print(e)
-            #logger.error(f"Error getting MySQL Flexible Server info: {e}")
-            continue
+    with open('/mnt/c/Users/rdepina/tmp/mysqlconfigs.txt', 'w') as outfile:
+        for flxserverinfo in results.data:
+            #construct the URL:
+            sub_id = flxserverinfo['subscriptionId']
+            rg = flxserverinfo['resourceGroup']
+            srvrname = flxserverinfo['name']
+            url = f"https://management.azure.com/subscriptions/{sub_id}/resourceGroups/{rg}/providers/Microsoft.DBforMySQL/flexibleServers/{srvrname}/configurations/aad_auth_only?api-version=2021-05-01"
+            try:
+                jsonresult = make_get_rest_call(url, accesstoken.token)
+                aad_auth_only = json.loads(jsonresult)['properties']['value']
+                print(f'AAD authentication for {srvrname} is aad_auth_only {aad_auth_only}')
+                
+            except HttpResponseError as e:
+                print(e)
+                #logger.error(f"Error getting MySQL Flexible Server info: {e}")
+                continue
     return results.data
 
 
@@ -606,29 +607,29 @@ def execute_discovery(tenant_id: str, subscription_id: list):
             print("Subscription: " + sub)
             print("##################################################")
 
-            # # Get all RBAC permissions at the subscription level
-            # get_mi_information_inventory(creds, sub, path)
+            # Get all RBAC permissions at the subscription level
+            get_mi_information_inventory(creds, sub, path)
 
-            # # Get all KeyVaults
-            # get_keyvault_information_inventory(creds, sub, path)
+            # Get all KeyVaults
+            get_keyvault_information_inventory(creds, sub, path)
 
-            # # Get all AKS Clusters
-            # get_aks_information_inventory(creds, sub, path)
+            # Get all AKS Clusters
+            get_aks_information_inventory(creds, sub, path)
 
-            # # Get all Postgres Flexible Servers
-            # get_postgres_information_inventory(creds, sub, path)
+            # Get all Postgres Flexible Servers
+            get_postgres_information_inventory(creds, sub, path)
 
-            # # Get all Azure SQL DB Servers
-            # get_azure_sql_information_inventory(creds, sub, path)
+            # Get all Azure SQL DB Servers
+            get_azure_sql_information_inventory(creds, sub, path)
 
             # Get all MySQL Flexible Servers
             get_mysql_information_inventory(creds, sub, path)
 
-            # # Get all Cosmos DB Accounts
-            # get_cosmosdb_information_inventory(creds, sub, path)
+            # Get all Cosmos DB Accounts
+            get_cosmosdb_information_inventory(creds, sub, path)
 
-            # # Get all Dev Centers/Dev Boxes
-            # get_devbox_inventory(creds, sub, path)
+            # Get all Dev Centers/Dev Boxes
+            get_devbox_inventory(creds, sub, path)
 
 
 if __name__ == '__main__':
