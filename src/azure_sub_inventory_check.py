@@ -155,6 +155,35 @@ def get_postgres_flexible_servers(credential: DefaultAzureCredential, subscripti
     print(f'Total Postgres Flexible Servers: {len(results.data)}')
     return results.data
 
+# get inventory of MySQL Flexible Servers
+def get_mysql_flexible_servers(credential: DefaultAzureCredential, subscription_id: str) -> list:
+    query = "resources \
+    | where type in ('microsoft.dbformysql/flexibleservers') \
+    | project subscriptionId, name, id, location, resourceGroup"
+
+    results = get_resources(credential, query, subscription_id)
+    print(f'Total MySQL Flexible Servers: {len(results.data)}')
+
+    accesstoken = credential.get_token('https://management.azure.com/.default')
+
+    for flxserverinfo in results.data:
+        #construct the URL:
+        sub_id = flxserverinfo['subscriptionId']
+        rg = flxserverinfo['resourceGroup']
+        srvrname = flxserverinfo['name']
+        url = f"https://management.azure.com/subscriptions/{sub_id}/resourceGroups/{rg}/providers/Microsoft.DBforMySQL/flexibleServers/{srvrname}/configurations?api-version=2021-05-01"
+        try:
+            jsonresult = make_get_rest_call(url, accesstoken.token)
+            configs = json.loads(jsonresult)
+            print(f'***************      CONFIGURATION FOR {srvrname}      **********************************')
+            print(jsonreseult)
+        except HttpResponseError as e:
+            print(e)
+            #logger.error(f"Error getting MySQL Flexible Server info: {e}")
+            continue
+    return results.data
+
+
 
 # of Key Vaults in this sub
 def get_all_vaults(credential: DefaultAzureCredential, subscription_id: str) -> list:
@@ -250,15 +279,15 @@ def enumerate_rbac_roles(credential: DefaultAzureCredential, subscription_id: st
             if item.principal_type == 'User':
                 json_text = make_get_rest_call(
                     f'https://graph.microsoft.com/beta/users/{item.principal_id}?$select=displayName',
-                    access_token)
+                    access_token.token)
             elif item.principal_type == 'ServicePrincipal':
                 json_text = make_get_rest_call(
                     f'https://graph.microsoft.com/beta/servicePrincipals/{item.principal_id}?$select=displayName',
-                    access_token)
+                    access_token.token)
             elif item.principal_type == 'Group':
                 json_text = make_get_rest_call(
                     f'https://graph.microsoft.com/beta/groups/{item.principal_id}?$select=displayName',
-                    access_token)
+                    access_token.token)
             json_results = json.loads(json_text)
             obj_display = json_results['displayName']
             # print(obj_display)
@@ -322,7 +351,7 @@ def get_all_managed_identities(credential: DefaultAzureCredential, subscription_
 
             json_text = make_get_rest_call(
                 f'https://graph.microsoft.com/beta/servicePrincipals/{item["principalId"]}/transitiveMemberOf?$select=displayName',
-                credential.get_token('https://graph.microsoft.com/.default'))
+                credential.get_token('https://graph.microsoft.com/.default').token)
             json_results = json.loads(json_text)
             json_results_items = json_results['value']
             if len(json_results_items) > 0:
@@ -465,6 +494,12 @@ def get_cosmosdb_information_inventory(creds, sub, path):
     if acct is not None and rbac_roles is not None and len(rbac_roles) > 0:
         write_to_csv(path + os.sep + 'raw-cosmosdb-export.csv', rbac_roles, sub)
 
+def get_mysql_information_inventory(creds, sub, path):
+    mysql_servers = get_mysql_flexible_servers(creds, sub)
+    count = len(mysql_servers)
+    if count > 0:
+        write_to_csv(path + os.sep + 'raw-mysql-flexible-servers-export.csv', mysql_servers, sub)
+
 
 # generate the dev centers in a subscription
 def get_devcenters(credential: DefaultAzureCredential, subscription_id: str) -> list | int:
@@ -504,7 +539,7 @@ def get_devcenter_devboxes(credential: DefaultAzureCredential, devcenter_uri: st
 
         # get the devboxes
         url = f'{endpoint}devboxes?api-version=2023-04-01'
-        json_response = make_get_rest_call(url, token)
+        json_response = make_get_rest_call(url, token.token)
 
         # parse the response JSON
         arr = json.loads(json_response)["value"]
@@ -545,7 +580,7 @@ def make_get_rest_call(url: str, token: str) -> str:
     :param url: string - the URL to call
     :param token: string - access token
     """
-    response = requests.get(url, headers={'Authorization': f'Bearer {token.token}'})
+    response = requests.get(url, headers={'Authorization': f'Bearer {token}'})
     if response.status_code != 200:
         raise HttpResponseError(f'Error on GET call to {url} - {response.status_code} - {response.text}')
 
@@ -571,26 +606,29 @@ def execute_discovery(tenant_id: str, subscription_id: list):
             print("Subscription: " + sub)
             print("##################################################")
 
-            # Get all RBAC permissions at the subscription level
-            get_mi_information_inventory(creds, sub, path)
+            # # Get all RBAC permissions at the subscription level
+            # get_mi_information_inventory(creds, sub, path)
 
-            # Get all KeyVaults
-            get_keyvault_information_inventory(creds, sub, path)
+            # # Get all KeyVaults
+            # get_keyvault_information_inventory(creds, sub, path)
 
-            # Get all AKS Clusters
-            get_aks_information_inventory(creds, sub, path)
+            # # Get all AKS Clusters
+            # get_aks_information_inventory(creds, sub, path)
 
-            # Get all Postgres Flexible Servers
-            get_postgres_information_inventory(creds, sub, path)
+            # # Get all Postgres Flexible Servers
+            # get_postgres_information_inventory(creds, sub, path)
 
-            # Get all Azure SQL DB Servers
-            get_azure_sql_information_inventory(creds, sub, path)
+            # # Get all Azure SQL DB Servers
+            # get_azure_sql_information_inventory(creds, sub, path)
 
-            # Get all Cosmos DB Accounts
-            get_cosmosdb_information_inventory(creds, sub, path)
+            # Get all MySQL Flexible Servers
+            get_mysql_information_inventory(creds, sub, path)
 
-            # Get all Dev Centers/Dev Boxes
-            get_devbox_inventory(creds, sub, path)
+            # # Get all Cosmos DB Accounts
+            # get_cosmosdb_information_inventory(creds, sub, path)
+
+            # # Get all Dev Centers/Dev Boxes
+            # get_devbox_inventory(creds, sub, path)
 
 
 if __name__ == '__main__':
