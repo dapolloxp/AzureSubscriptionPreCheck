@@ -166,25 +166,34 @@ def get_mysql_flexible_servers(credential: DefaultAzureCredential, subscription_
 
     accesstoken = credential.get_token('https://management.azure.com/.default')
 
-    with open('/mnt/c/Users/rdepina/tmp/mysqlconfigs.txt', 'w') as outfile:
-        for flxserverinfo in results.data:
-            #construct the URL:
-            sub_id = flxserverinfo['subscriptionId']
-            rg = flxserverinfo['resourceGroup']
-            srvrname = flxserverinfo['name']
-            url = f"https://management.azure.com/subscriptions/{sub_id}/resourceGroups/{rg}/providers/Microsoft.DBforMySQL/flexibleServers/{srvrname}/configurations/aad_auth_only?api-version=2021-05-01"
-            try:
+    for flxserverinfo in results.data:
+        #construct the URL:
+        sub_id = flxserverinfo['subscriptionId']
+        rg = flxserverinfo['resourceGroup']
+        srvrname = flxserverinfo['name']
+        url = f"https://management.azure.com/subscriptions/{sub_id}/resourceGroups/{rg}/providers/Microsoft.DBforMySQL/flexibleServers/{srvrname}/configurations/aad_auth_only?api-version=2021-05-01"
+        try:
+            jsonresult = make_get_rest_call(url, accesstoken.token)
+            aad_auth_only = json.loads(jsonresult)['properties']['value']
+            print(f'AAD only authentication for {srvrname} is {aad_auth_only}')
+            flxserverinfo['aad_auth_only'] = aad_auth_only == 'ON'
+
+            # only check AD admin info if AAD only auth is not set
+            if (not flxserverinfo['aad_auth_only']):
+                # connect with server and extract plugin
+                url = f"https://management.azure.com/subscriptions/{sub_id}/resourceGroups/{rg}/providers/Microsoft.DBforMySQL/flexibleServers/{srvrname}/administrators?api-version=2022-01-01"
                 jsonresult = make_get_rest_call(url, accesstoken.token)
-                aad_auth_only = json.loads(jsonresult)['properties']['value']
-                print(f'AAD authentication for {srvrname} is aad_auth_only {aad_auth_only}')
-                
-            except HttpResponseError as e:
-                print(e)
-                #logger.error(f"Error getting MySQL Flexible Server info: {e}")
-                continue
+                raw_admins = json.loads(jsonresult)["value"]
+                aad_admins = [aad_admins for aad_admins in raw_admins if aad_admins['properties']['administratorType'] == 'ActiveDirectory']
+                flxserverinfo['aad_auth_enabled'] = len(aad_admins) > 0
+            else:
+                flxserverinfo['aad_auth_enabled'] = True
+
+        except HttpResponseError as e:
+            print(f"Error getting MySQL Flexible Server info: {e}")
+            #logger.error(f"Error getting MySQL Flexible Server info: {e}")
+            continue
     return results.data
-
-
 
 # of Key Vaults in this sub
 def get_all_vaults(credential: DefaultAzureCredential, subscription_id: str) -> list:
@@ -551,7 +560,6 @@ def get_devcenter_devboxes(credential: DefaultAzureCredential, devcenter_uri: st
     except Exception as e:
         print(f'Error getting devboxes for {devcenter_uri} - {e}')
         return None, 0
-
 
 def get_devbox_inventory(creds: DefaultAzureCredential, subscrption_id: str, path: str):
     raw_devboxes = []
