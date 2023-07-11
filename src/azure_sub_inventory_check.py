@@ -1,6 +1,7 @@
 import csv
 import os
 import datetime
+from azure.core.credentials import AccessToken
 from azure.mgmt.msi import ManagedServiceIdentityClient
 import azure.mgmt.resourcegraph as arg
 from azure.identity import DefaultAzureCredential
@@ -17,7 +18,7 @@ import shortuuid
 import sys
 import logging
 import argparse
-import colorlog
+
 
 def _get_mi_associations(credential: DefaultAzureCredential,
                          subscription_id: str,
@@ -128,7 +129,6 @@ def create_path(folder_name: str) -> str:
     else:
         pass
     return path
-
 
 def get_sql_servers(credential: DefaultAzureCredential, subscription_id: str) -> list | int:
     query = "resources \
@@ -247,6 +247,9 @@ def enumerate_rbac_roles(credential: DefaultAzureCredential, subscription_id: st
     access_token = credential.get_token('https://graph.microsoft.com/.default')
     for item in results:
         try:
+            if (access_token.expires_on - datetime.datetime.now().timestamp()) < 300:
+                access_token = credential.get_token('https://graph.microsoft.com/.default')
+
             # Identity not found.
             json_text = ""
 
@@ -278,7 +281,8 @@ def enumerate_rbac_roles(credential: DefaultAzureCredential, subscription_id: st
                 roles.append(dict_obj)
         except HttpResponseError as e:
             logger.exception(e)
-
+        except AttributeError as e:
+            logger.exception(e)
         except Exception as e:
             logger.exception(e)
 
@@ -548,7 +552,7 @@ def get_devbox_inventory(creds: DefaultAzureCredential, subscrption_id: str, pat
 
 
 # use this to make REST API calls. Returns JSON response
-def make_get_rest_call(url: str, token: str) -> str:
+def make_get_rest_call(url: str, token: AccessToken) -> str:
     """
     This function will make a REST API call to the specified URL. Throws HttpResponseError if
     the response staus code is not 200.
