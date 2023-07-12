@@ -1,6 +1,7 @@
 import csv
 import os
 import datetime
+from azure.core.credentials import AccessToken
 from azure.mgmt.msi import ManagedServiceIdentityClient
 import azure.mgmt.resourcegraph as arg
 from azure.identity import DefaultAzureCredential
@@ -15,6 +16,7 @@ import json
 import requests
 import shortuuid
 import sys
+import logging
 import argparse
 
 
@@ -38,7 +40,7 @@ def _get_mi_associations(credential: DefaultAzureCredential,
             resource_group_name=resource_group,
             resource_name=resource_name)
         mi_to_resource_associations = {}
-        print(f'Checking associations for {resource_name}')
+        logger.info(f'Checking associations for {resource_name}')
         association_count = 0
         subscription_list = []
         for item in associated_resources:
@@ -61,10 +63,10 @@ def _get_mi_associations(credential: DefaultAzureCredential,
 
         return mi_to_resource_associations_list, association_count, subscription_list
     except HttpResponseError as e:
-        print(e.message)
+        logger.exception(e.message)
         return [], 0, []
     except:
-        print(f'Unexpected error: {sys.exc_info()[0]}')
+        logger.exception(f'Unexpected error: {sys.exc_info()[0]}')
         return [], 0, []
 
 
@@ -123,11 +125,10 @@ def create_path(folder_name: str) -> str:
     if not os.path.exists(path):
         # Create a new directory because it does not exist
         os.makedirs(path)
-        print(f"Creating {path} directory")
+        logger.info(f"Creating {path} directory")
     else:
         pass
     return path
-
 
 def get_sql_servers(credential: DefaultAzureCredential, subscription_id: str) -> list | int:
     query = "resources \
@@ -152,7 +153,7 @@ def get_postgres_flexible_servers(credential: DefaultAzureCredential, subscripti
     | project subscriptionId, name, type, location, resourceGroup, activeDirectoryAuth, passwordAuth"
 
     results = get_resources(credential, query, subscription_id)
-    print(f'Total Postgres Flexible Servers: {len(results.data)}')
+    logger.info(f'Total Postgres Flexible Servers: {len(results.data)}')
     return results.data
 
 # get inventory of MySQL Flexible Servers
@@ -210,7 +211,7 @@ def get_all_vaults(credential: DefaultAzureCredential, subscription_id: str) -> 
     | project subscriptionId, name, id, type, tenantId, location, resourceGroup, access_policies"
 
     results = get_resources(credential, query, subscription_id)
-    print(f'Total Key Vaults: {len(results.data)}')
+    logger.info(f'Total Key Vaults: {len(results.data)}')
     return results.data
 
 
@@ -223,7 +224,8 @@ def get_resources(credential: DefaultAzureCredential, str_query: str, subscripti
     :param str_query:
     :return: QueryResponse
     """
-
+    log = logging.getLogger("azure_sub_logger")
+    log.debug(f'Running query: {str_query}')
     # Create Azure Resource Graph client and set options
     arg_client = arg.ResourceGraphClient(credential)
     arg_query_options = arg.models.QueryRequestOptions(result_format="objectArray")
@@ -239,6 +241,7 @@ def get_subscription_data(credential: DefaultAzureCredential) -> list | list:
     """
     returns subscription list and subscription raw data. This returns only subscription that a user has access to.
     """
+    logger.info("Getting Subscription Data")
     subs_client = SubscriptionClient(credential)
     # get the list of subscriptions the user has access to
     subs_raw = [s.as_dict() for s in subs_client.subscriptions.list()]
@@ -252,6 +255,7 @@ def generate_auth_credentials(tenant_id: str) -> DefaultAzureCredential:
     This function will generate the credentials for the Azure using the ALI Credential
     :return: ALI Credential
     """
+    logger.info("Generating Azure Credentials")
     if str is not None:
         credential = DefaultAzureCredential(interactive_browser_tenant_id=tenant_id)
     else:
@@ -269,6 +273,7 @@ def enumerate_rbac_roles(credential: DefaultAzureCredential, subscription_id: st
     :param object_id:
     :return:
     """
+
     # get credential
     authorization_client = AuthorizationManagementClient(credential, subscription_id)
 
@@ -281,6 +286,10 @@ def enumerate_rbac_roles(credential: DefaultAzureCredential, subscription_id: st
     access_token = credential.get_token('https://graph.microsoft.com/.default')
     for item in results:
         try:
+            if (access_token.expires_on - datetime.datetime.now().timestamp()) < 300:
+                logger.debug(f'enumerate_rbac_roles: Token expired, refreshing')
+                access_token = credential.get_token('https://graph.microsoft.com/.default')
+
             # Identity not found.
             json_text = ""
 
@@ -311,10 +320,11 @@ def enumerate_rbac_roles(credential: DefaultAzureCredential, subscription_id: st
             if item.scope.startswith("/subscriptions"):
                 roles.append(dict_obj)
         except HttpResponseError as e:
-            print(e)
-
+            logger.exception(e)
+        except AttributeError as e:
+            logger.exception(e)
         except Exception as e:
-            print(e)
+            logger.exception(e)
 
     return roles
 
@@ -329,6 +339,8 @@ def get_aks_clusters(credential: DefaultAzureCredential, subscription_id: str) -
     query = "resources \
     | where type == 'microsoft.containerservice/managedclusters'  \
     | project subscriptionId, name, id, type, tenantId, location, resourceGroup, identity"
+    # log = logging.getLogger("azure_sub_logger")
+    logger.info(f'Getting all AKS clusters for subscription {subscription_id}')
     results = get_resources(credential, query, subscription_id)
 
     return results.data, len(results.data)
@@ -345,7 +357,10 @@ def get_all_managed_identities(credential: DefaultAzureCredential, subscription_
     | extend identityType=iff(isnull(identity), 'UserAssignedIdentity', 'SystemAssignedIdentity') \
     | extend principalId=parse_json(managedidentity)['principalId'] \
     | project subscriptionId, name, id, type, tenantId, location, resourceGroup, managedidentity, principalId, identityType"
+    log = logging.getLogger("azure_sub_logger")
+    log.debug(f'Getting all managed identities for subscription {subscription_id}')
 
+    logger.info(f'Getting all managed identities for subscription {subscription_id}')
     results = get_resources(credential, query, subscription_id)
 
     for item in results.data:
@@ -385,12 +400,12 @@ def get_all_managed_identities(credential: DefaultAzureCredential, subscription_
                     item['associations_count'] = association_count
                     item['associations_sub_ids'] = total_subs
 
-                print(
+                logger.info(
                     f'Found {association_count} associations for {item.get("name")} in the following subs: {total_subs}')
         except HttpResponseError as e:
-            print(f'Error calling Graph API {e}')
+            log.warning(f'Error calling Graph API {e}')
         except Exception as e:
-            print(f'Error: {e}')
+            log.warning(f'Error: {e}')
 
     return results.data, len(results.data)
 
@@ -412,7 +427,7 @@ def get_managed_identity_details(credential: DefaultAzureCredential, subscriptio
         if result:
             results_dict_list = [item.as_dict() for item in result]
             num_fed_creds = len(results_dict_list)
-        print(f'\tFederated Identity Credentials for {resource_name}: {num_fed_creds}')
+        logger.info(f'\tFederated Identity Credentials for {resource_name}: {num_fed_creds}')
         return results_dict_list, num_fed_creds
     else:
         return [], 0
@@ -461,7 +476,7 @@ def get_mi_information_inventory(creds, sub, path):
         write_to_csv(path + os.sep + "raw-rbac-assignments-export.csv", sub_rbac_roles, sub)
 
     managed_identities, mi_count = get_all_managed_identities(creds, sub)
-    print(f'Total Managed Identities: {mi_count}')
+    logger.info(f'Total Managed Identities: {mi_count}')
     if len(managed_identities) > 0:
         write_to_csv(path + os.sep + "raw-resources-export.csv", managed_identities, sub)
 
@@ -480,7 +495,7 @@ def get_keyvault_information_inventory(creds, sub, path):
 
 def get_aks_information_inventory(creds, sub, path):
     aks_clusters, num_aks_clusters = get_aks_clusters(creds, sub)
-    print(f'Total AKS Clusters: {num_aks_clusters}')
+    logger.info(f'Total AKS Clusters: {num_aks_clusters}')
     if len(aks_clusters) > 0:
         write_to_csv(path + os.sep + 'raw-aks-resources-export.csv', aks_clusters, sub)
 
@@ -493,14 +508,14 @@ def get_postgres_information_inventory(creds, sub, path):
 
 def get_azure_sql_information_inventory(creds, sub, path):
     azure_sql_servers, num_azure_sql_servers = get_sql_servers(creds, sub)
-    print(f'Total Azure SQL DB Servers: {num_azure_sql_servers}')
+    logger.info(f'Total Azure SQL DB Servers: {num_azure_sql_servers}')
     if len(azure_sql_servers) > 0:
         write_to_csv(path + os.sep + 'raw-sql-servers-export.csv', azure_sql_servers, sub)
 
 
 def get_cosmosdb_information_inventory(creds, sub, path):
     acct, rbac_roles, num_cosmos_accounts = get_cosmos_db(creds, sub)
-    print(f'Total Cosmos DB Accounts: {num_cosmos_accounts}')
+    logger.info(f'Total Cosmos DB Accounts: {num_cosmos_accounts}')
     if acct is not None and rbac_roles is not None and len(rbac_roles) > 0:
         write_to_csv(path + os.sep + 'raw-cosmosdb-export.csv', rbac_roles, sub)
 
@@ -544,7 +559,7 @@ def get_devcenter_devboxes(credential: DefaultAzureCredential, devcenter_uri: st
         # get a token scoped for Dev Center.
         token = credential.get_token('https://devcenter.azure.com')
         if token is None:
-            print('Error getting access token')
+            logger.error('Error getting access token')
             return None, 0
 
         # get the devboxes
@@ -558,7 +573,7 @@ def get_devcenter_devboxes(credential: DefaultAzureCredential, devcenter_uri: st
 
         return results, len(results)
     except Exception as e:
-        print(f'Error getting devboxes for {devcenter_uri} - {e}')
+        logger.info(f'Error getting devboxes for {devcenter_uri} - {e}')
         return None, 0
 
 def get_devbox_inventory(creds: DefaultAzureCredential, subscrption_id: str, path: str):
@@ -575,45 +590,58 @@ def get_devbox_inventory(creds: DefaultAzureCredential, subscrption_id: str, pat
 
             numdevboxes += count
 
-    print(f'Total Devboxes: {numdevboxes}')
+    logger.info(f'Total Devboxes: {numdevboxes}')
 
     if numdevboxes > 0:
         write_to_csv(path + os.sep + 'raw-devboxes-export.csv', raw_devboxes, subscrption_id)
 
 
 # use this to make REST API calls. Returns JSON response
-def make_get_rest_call(url: str, token: str) -> str:
+def make_get_rest_call(url: str, token: AccessToken) -> str:
     """
     This function will make a REST API call to the specified URL. Throws HttpResponseError if
     the response staus code is not 200.
     :param url: string - the URL to call
     :param token: string - access token
     """
-    response = requests.get(url, headers={'Authorization': f'Bearer {token}'})
+
+    response = requests.get(url, headers={'Authorization': f'Bearer {token.token}'})
+
     if response.status_code != 200:
+        logger.warning(f'Error on GET call to {url} - {response.status_code} - {response.text}')
         raise HttpResponseError(f'Error on GET call to {url} - {response.status_code} - {response.text}')
 
     return response.text
 
 
-def execute_discovery(tenant_id: str, subscription_id: list):
+def create_custom_logger(name: str, level: int, log_path: str, suffix: str) -> logging.Logger:
+    logging.basicConfig(filename=f'{log_path + os.sep}subscriptions_inventory-{suffix}.log', filemode='w',
+                        format='%(asctime)s - %(levelname)s - %(message)s')
+    logger = logging.getLogger(name)
+    logger.setLevel(level)
+    return logger
+
+
+def execute_discovery(tenant_id: str, subscription_id: list, suffix: str):
+    path = create_path(f'subscriptions_inventory-{suffix}')
+
     creds = generate_auth_credentials(tenant_id)  # do this once
     if subscription_id is None or len(subscription_id) == 0:
         sub_list, list_sub_dict = get_subscription_data(creds)
     else:
         sub_list = subscription_id
 
-    suffix = datetime.datetime.now().strftime("%Y%m%d") + '-' + shortuuid.uuid()[:3]
-
-    path = create_path(f'subscriptions_inventory-{suffix}')
-
-    print(path)
+    # Do we really want to print a warning in the log when it's really just info?
+    logger.warning(path)
+    logger.info(path)
+    
     for sub in sub_list:
         if sub != '7dc3c9b5-bb4b-4193-8862-7a02bdf9a001':
             # Print Subscription Header
-            print("##################################################")
-            print("Subscription: " + sub)
-            print("##################################################")
+            print(f"Getting information for subscription: {sub}")
+            logger.info("##################################################")
+            logger.info("Subscription: " + sub)
+            logger.info("##################################################")
 
             # Get all RBAC permissions at the subscription level
             get_mi_information_inventory(creds, sub, path)
@@ -650,23 +678,52 @@ if __name__ == '__main__':
     # Add arguments
     parser.add_argument('--tenant_id', type=str, help='Azure tenant ID.', required=True)
     parser.add_argument('--sub_list', type=str, help='File containing list of subscriptions.')
+    parser.add_argument('-v', action='store_true', help='Verbose logging')
+    parser.add_argument('--verbose', action='store_true', help='Verbose logging')
+    parser.add_argument('-d', action='store_true', help='Debug logging')
+    parser.add_argument('--debug', action='store_true', help='Debug logging')
 
-    # Parse the command-line arguments
-    args = parser.parse_args()
+    try:
+        # Parse the command-line arguments
+        args = parser.parse_args()
 
-    # Access the values of the arguments
-    tenant_id = args.tenant_id
-    subscription_list = args.sub_list
+        # Set the logging level based on the arguments
+        verbose = args.v or args.verbose
+        debug = args.d or args.debug
 
-    subs = []
-    # check if file name exists
-    if subscription_list is not None:
-        try:
-            # check for existence of file
-            with open(subscription_list, 'r') as f:
-                subs = f.read().splitlines()
-        except FileNotFoundError:
-            print(f'File {subscription_list} not found.')
-    else:
-        print('No file name provided. Using subscription list from Azure profile.')
-    execute_discovery('', subs)
+        if debug:
+            level = logging.DEBUG
+        elif verbose:
+            level = logging.INFO
+        else:
+            level = logging.WARNING
+
+        # Access the values of the arguments
+        tenant_id = args.tenant_id
+        subscription_list = args.sub_list
+
+        # configure logging
+        suffix = datetime.datetime.now().strftime("%Y%m%d") + '-' + shortuuid.uuid()[:3]
+        log_path = create_path(f'logs')
+        logger = create_custom_logger('azure_sub_logger', level, log_path, suffix)
+
+        print('Creating inventory for tenant: ' + tenant_id)
+        logger.info('Creating inventory for tenant: ' + tenant_id)
+
+        subs = []
+        # check if file name exists
+        if subscription_list is not None:
+            try:
+                # check for existence of file
+                with open(subscription_list, 'r') as f:
+                    subs = f.read().splitlines()
+            except FileNotFoundError:
+                print(f'File {subscription_list} not found.')
+        else:
+            print('No file name provided. Using subscription list from Azure profile.')
+            logging.warning('No file name provided. Using subscription list from Azure profile.')
+        execute_discovery(tenant_id, subs, suffix)
+    except Exception as e:
+        print(e)
+        logger.error(e)
+    
