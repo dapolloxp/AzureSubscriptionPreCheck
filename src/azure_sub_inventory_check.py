@@ -119,7 +119,7 @@ def get_cosmos_db(credential: DefaultAzureCredential, subscription_id: str) -> s
 
 
 def create_path(folder_name: str) -> str:
-    path = os.getcwd() + os.sep + "data" + os.sep + folder_name
+    path = ".." + os.sep + "data" + os.sep + folder_name
     # Check whether the specified path exists or not
 
     if not os.path.exists(path):
