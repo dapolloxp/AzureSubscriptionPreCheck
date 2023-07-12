@@ -130,6 +130,7 @@ def create_path(folder_name: str) -> str:
         pass
     return path
 
+
 def get_sql_servers(credential: DefaultAzureCredential, subscription_id: str) -> list | int:
     query = "resources \
     | where type in ('microsoft.sql/servers') \
@@ -156,6 +157,7 @@ def get_postgres_flexible_servers(credential: DefaultAzureCredential, subscripti
     logger.info(f'Total Postgres Flexible Servers: {len(results.data)}')
     return results.data
 
+
 # get inventory of MySQL Flexible Servers
 def get_mysql_flexible_servers(credential: DefaultAzureCredential, subscription_id: str) -> list:
     query = "resources \
@@ -168,7 +170,7 @@ def get_mysql_flexible_servers(credential: DefaultAzureCredential, subscription_
     accesstoken = credential.get_token('https://management.azure.com/.default')
 
     for flxserverinfo in results.data:
-        #construct the URL:
+        # construct the URL:
         sub_id = flxserverinfo['subscriptionId']
         rg = flxserverinfo['resourceGroup']
         srvrname = flxserverinfo['name']
@@ -185,16 +187,18 @@ def get_mysql_flexible_servers(credential: DefaultAzureCredential, subscription_
                 url = f"https://management.azure.com/subscriptions/{sub_id}/resourceGroups/{rg}/providers/Microsoft.DBforMySQL/flexibleServers/{srvrname}/administrators?api-version=2022-01-01"
                 jsonresult = make_get_rest_call(url, accesstoken.token)
                 raw_admins = json.loads(jsonresult)["value"]
-                aad_admins = [aad_admins for aad_admins in raw_admins if aad_admins['properties']['administratorType'] == 'ActiveDirectory']
+                aad_admins = [aad_admins for aad_admins in raw_admins if
+                              aad_admins['properties']['administratorType'] == 'ActiveDirectory']
                 flxserverinfo['aad_auth_enabled'] = len(aad_admins) > 0
             else:
                 flxserverinfo['aad_auth_enabled'] = True
 
         except HttpResponseError as e:
             print(f"Error getting MySQL Flexible Server info: {e}")
-            #logger.error(f"Error getting MySQL Flexible Server info: {e}")
+            # logger.error(f"Error getting MySQL Flexible Server info: {e}")
             continue
     return results.data
+
 
 # of Key Vaults in this sub
 def get_all_vaults(credential: DefaultAzureCredential, subscription_id: str) -> list:
@@ -519,6 +523,7 @@ def get_cosmosdb_information_inventory(creds, sub, path):
     if acct is not None and rbac_roles is not None and len(rbac_roles) > 0:
         write_to_csv(path + os.sep + 'raw-cosmosdb-export.csv', rbac_roles, sub)
 
+
 def get_mysql_information_inventory(creds, sub, path):
     mysql_servers = get_mysql_flexible_servers(creds, sub)
     count = len(mysql_servers)
@@ -575,6 +580,7 @@ def get_devcenter_devboxes(credential: DefaultAzureCredential, devcenter_uri: st
     except Exception as e:
         logger.info(f'Error getting devboxes for {devcenter_uri} - {e}')
         return None, 0
+
 
 def get_devbox_inventory(creds: DefaultAzureCredential, subscrption_id: str, path: str):
     raw_devboxes = []
@@ -634,7 +640,7 @@ def execute_discovery(tenant_id: str, subscription_id: list, suffix: str):
     # Do we really want to print a warning in the log when it's really just info?
     logger.warning(path)
     logger.info(path)
-    
+
     for sub in sub_list:
         if sub != '7dc3c9b5-bb4b-4193-8862-7a02bdf9a001':
             # Print Subscription Header
@@ -703,7 +709,7 @@ if __name__ == '__main__':
         subscription_list = args.sub_list
 
         # configure logging
-        suffix = datetime.datetime.now().strftime("%Y%m%d") + '-' + shortuuid.uuid()[:3]
+        suffix = datetime.datetime.now().strftime("%Y%m%d-%H-%M-%S")
         log_path = create_path(f'logs')
         logger = create_custom_logger('azure_sub_logger', level, log_path, suffix)
 
@@ -725,5 +731,4 @@ if __name__ == '__main__':
         execute_discovery(tenant_id, subs, suffix)
     except Exception as e:
         print(e)
-        logger.error(e)
-    
+        logging.error(e)
