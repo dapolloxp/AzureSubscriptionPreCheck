@@ -248,6 +248,7 @@ def enumerate_rbac_roles(credential: DefaultAzureCredential, subscription_id: st
     for item in results:
         try:
             if (access_token.expires_on - datetime.datetime.now().timestamp()) < 300:
+                logger.debug(f'enumerate_rbac_roles: Token expired, refreshing')
                 access_token = credential.get_token('https://graph.microsoft.com/.default')
 
             # Identity not found.
