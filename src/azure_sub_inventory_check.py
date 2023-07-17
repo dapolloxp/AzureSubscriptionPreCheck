@@ -298,15 +298,15 @@ def enumerate_rbac_roles(credential: DefaultAzureCredential, subscription_id: st
             if item.principal_type == 'User':
                 json_text = make_get_rest_call(
                     f'https://graph.microsoft.com/beta/users/{item.principal_id}?$select=displayName',
-                    access_token)
+                    access_token.token)
             elif item.principal_type == 'ServicePrincipal':
                 json_text = make_get_rest_call(
                     f'https://graph.microsoft.com/beta/servicePrincipals/{item.principal_id}?$select=displayName',
-                    access_token)
+                    access_token.token)
             elif item.principal_type == 'Group':
                 json_text = make_get_rest_call(
                     f'https://graph.microsoft.com/beta/groups/{item.principal_id}?$select=displayName',
-                    access_token)
+                    access_token.token)
             json_results = json.loads(json_text)
             obj_display = json_results['displayName']
             # print(obj_display)
@@ -597,7 +597,7 @@ def get_devbox_inventory(creds: DefaultAzureCredential, subscrption_id: str, pat
 
 
 # use this to make REST API calls. Returns JSON response
-def make_get_rest_call(url: str, token: AccessToken) -> str:
+def make_get_rest_call(url: str, token: str) -> str:
     """
     This function will make a REST API call to the specified URL. Throws HttpResponseError if
     the response staus code is not 200.
@@ -605,7 +605,7 @@ def make_get_rest_call(url: str, token: AccessToken) -> str:
     :param token: string - access token
     """
 
-    response = requests.get(url, headers={'Authorization': f'Bearer {token.token}'})
+    response = requests.get(url, headers={'Authorization': f'Bearer {token}'})
 
     if response.status_code != 200:
         logger.warning(f'Error on GET call to {url} - {response.status_code} - {response.text}')
