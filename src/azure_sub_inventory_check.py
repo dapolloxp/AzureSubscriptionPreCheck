@@ -298,15 +298,15 @@ def enumerate_rbac_roles(credential: DefaultAzureCredential, subscription_id: st
             if item.principal_type == 'User':
                 json_text = make_get_rest_call(
                     f'https://graph.microsoft.com/beta/users/{item.principal_id}?$select=displayName',
-                    access_token.token)
+                    access_token)
             elif item.principal_type == 'ServicePrincipal':
                 json_text = make_get_rest_call(
                     f'https://graph.microsoft.com/beta/servicePrincipals/{item.principal_id}?$select=displayName',
-                    access_token.token)
+                    access_token)
             elif item.principal_type == 'Group':
                 json_text = make_get_rest_call(
                     f'https://graph.microsoft.com/beta/groups/{item.principal_id}?$select=displayName',
-                    access_token.token)
+                    access_token)
             json_results = json.loads(json_text)
             obj_display = json_results['displayName']
             # print(obj_display)
