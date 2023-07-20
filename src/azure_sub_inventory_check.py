@@ -1,7 +1,6 @@
 import csv
 import os
 import datetime
-from azure.core.credentials import AccessToken
 from azure.mgmt.msi import ManagedServiceIdentityClient
 import azure.mgmt.resourcegraph as arg
 from azure.identity import DefaultAzureCredential
@@ -18,7 +17,7 @@ import shortuuid
 import sys
 import logging
 import argparse
-
+import colorlog
 
 def _get_mi_associations(credential: DefaultAzureCredential,
                          subscription_id: str,
@@ -119,7 +118,7 @@ def get_cosmos_db(credential: DefaultAzureCredential, subscription_id: str) -> s
 
 
 def create_path(folder_name: str) -> str:
-    path = os.getcwd() + os.sep + "data" + os.sep + folder_name
+    path = ".." + os.sep + "data" + os.sep + folder_name
     # Check whether the specified path exists or not
 
     if not os.path.exists(path):
@@ -129,6 +128,7 @@ def create_path(folder_name: str) -> str:
     else:
         pass
     return path
+
 
 def get_sql_servers(credential: DefaultAzureCredential, subscription_id: str) -> list | int:
     query = "resources \
@@ -156,6 +156,45 @@ def get_postgres_flexible_servers(credential: DefaultAzureCredential, subscripti
     logger.info(f'Total Postgres Flexible Servers: {len(results.data)}')
     return results.data
 
+# get inventory of MySQL Flexible Servers
+def get_mysql_flexible_servers(credential: DefaultAzureCredential, subscription_id: str) -> list:
+    query = "resources \
+    | where type in ('microsoft.dbformysql/flexibleservers') \
+    | project subscriptionId, name, id, location, resourceGroup"
+
+    results = get_resources(credential, query, subscription_id)
+    print(f'Total MySQL Flexible Servers: {len(results.data)}')
+
+    accesstoken = credential.get_token('https://management.azure.com/.default')
+
+    for flxserverinfo in results.data:
+        #construct the URL:
+        sub_id = flxserverinfo['subscriptionId']
+        rg = flxserverinfo['resourceGroup']
+        srvrname = flxserverinfo['name']
+        url = f"https://management.azure.com/subscriptions/{sub_id}/resourceGroups/{rg}/providers/Microsoft.DBforMySQL/flexibleServers/{srvrname}/configurations/aad_auth_only?api-version=2021-05-01"
+        try:
+            jsonresult = make_get_rest_call(url, accesstoken.token)
+            aad_auth_only = json.loads(jsonresult)['properties']['value']
+            print(f'AAD only authentication for {srvrname} is {aad_auth_only}')
+            flxserverinfo['aad_auth_only'] = aad_auth_only == 'ON'
+
+            # only check AD admin info if AAD only auth is not set
+            if (not flxserverinfo['aad_auth_only']):
+                # connect with server and extract plugin
+                url = f"https://management.azure.com/subscriptions/{sub_id}/resourceGroups/{rg}/providers/Microsoft.DBforMySQL/flexibleServers/{srvrname}/administrators?api-version=2022-01-01"
+                jsonresult = make_get_rest_call(url, accesstoken.token)
+                raw_admins = json.loads(jsonresult)["value"]
+                aad_admins = [aad_admins for aad_admins in raw_admins if aad_admins['properties']['administratorType'] == 'ActiveDirectory']
+                flxserverinfo['aad_auth_enabled'] = len(aad_admins) > 0
+            else:
+                flxserverinfo['aad_auth_enabled'] = True
+
+        except HttpResponseError as e:
+            print(f"Error getting MySQL Flexible Server info: {e}")
+            #logger.error(f"Error getting MySQL Flexible Server info: {e}")
+            continue
+    return results.data
 
 # of Key Vaults in this sub
 def get_all_vaults(credential: DefaultAzureCredential, subscription_id: str) -> list:
@@ -260,15 +299,15 @@ def enumerate_rbac_roles(credential: DefaultAzureCredential, subscription_id: st
             if item.principal_type == 'User':
                 json_text = make_get_rest_call(
                     f'https://graph.microsoft.com/beta/users/{item.principal_id}?$select=displayName',
-                    access_token)
+                    access_token.token)
             elif item.principal_type == 'ServicePrincipal':
                 json_text = make_get_rest_call(
                     f'https://graph.microsoft.com/beta/servicePrincipals/{item.principal_id}?$select=displayName',
-                    access_token)
+                    access_token.token)
             elif item.principal_type == 'Group':
                 json_text = make_get_rest_call(
                     f'https://graph.microsoft.com/beta/groups/{item.principal_id}?$select=displayName',
-                    access_token)
+                    access_token.token)
             json_results = json.loads(json_text)
             obj_display = json_results['displayName']
             # print(obj_display)
@@ -283,8 +322,7 @@ def enumerate_rbac_roles(credential: DefaultAzureCredential, subscription_id: st
                 roles.append(dict_obj)
         except HttpResponseError as e:
             logger.exception(e)
-        except AttributeError as e:
-            logger.exception(e)
+
         except Exception as e:
             logger.exception(e)
 
@@ -338,7 +376,7 @@ def get_all_managed_identities(credential: DefaultAzureCredential, subscription_
 
             json_text = make_get_rest_call(
                 f'https://graph.microsoft.com/beta/servicePrincipals/{item["principalId"]}/transitiveMemberOf?$select=displayName',
-                credential.get_token('https://graph.microsoft.com/.default'))
+                credential.get_token('https://graph.microsoft.com/.default').token)
             json_results = json.loads(json_text)
             json_results_items = json_results['value']
             if len(json_results_items) > 0:
@@ -481,6 +519,12 @@ def get_cosmosdb_information_inventory(creds, sub, path):
     if acct is not None and rbac_roles is not None and len(rbac_roles) > 0:
         write_to_csv(path + os.sep + 'raw-cosmosdb-export.csv', rbac_roles, sub)
 
+def get_mysql_information_inventory(creds, sub, path):
+    mysql_servers = get_mysql_flexible_servers(creds, sub)
+    count = len(mysql_servers)
+    if count > 0:
+        write_to_csv(path + os.sep + 'raw-mysql-flexible-servers-export.csv', mysql_servers, sub)
+
 
 # generate the dev centers in a subscription
 def get_devcenters(credential: DefaultAzureCredential, subscription_id: str) -> list | int:
@@ -520,7 +564,7 @@ def get_devcenter_devboxes(credential: DefaultAzureCredential, devcenter_uri: st
 
         # get the devboxes
         url = f'{endpoint}devboxes?api-version=2023-04-01'
-        json_response = make_get_rest_call(url, token)
+        json_response = make_get_rest_call(url, token.token)
 
         # parse the response JSON
         arr = json.loads(json_response)["value"]
@@ -531,7 +575,6 @@ def get_devcenter_devboxes(credential: DefaultAzureCredential, devcenter_uri: st
     except Exception as e:
         logger.info(f'Error getting devboxes for {devcenter_uri} - {e}')
         return None, 0
-
 
 def get_devbox_inventory(creds: DefaultAzureCredential, subscrption_id: str, path: str):
     raw_devboxes = []
@@ -554,7 +597,7 @@ def get_devbox_inventory(creds: DefaultAzureCredential, subscrption_id: str, pat
 
 
 # use this to make REST API calls. Returns JSON response
-def make_get_rest_call(url: str, token: AccessToken) -> str:
+def make_get_rest_call(url: str, token: str) -> str:
     """
     This function will make a REST API call to the specified URL. Throws HttpResponseError if
     the response staus code is not 200.
@@ -563,6 +606,7 @@ def make_get_rest_call(url: str, token: AccessToken) -> str:
     """
 
     response = requests.get(url, headers={'Authorization': f'Bearer {token.token}'})
+
     if response.status_code != 200:
         logger.warning(f'Error on GET call to {url} - {response.status_code} - {response.text}')
         raise HttpResponseError(f'Error on GET call to {url} - {response.status_code} - {response.text}')
@@ -613,6 +657,9 @@ def execute_discovery(tenant_id: str, subscription_id: list, suffix: str):
 
             # Get all Azure SQL DB Servers
             get_azure_sql_information_inventory(creds, sub, path)
+
+            # Get all MySQL Flexible Servers
+            get_mysql_information_inventory(creds, sub, path)
 
             # Get all Cosmos DB Accounts
             get_cosmosdb_information_inventory(creds, sub, path)
