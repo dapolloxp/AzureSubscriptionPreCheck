@@ -605,7 +605,7 @@ def make_get_rest_call(url: str, token: str) -> str:
     :param token: string - access token
     """
 
-    response = requests.get(url, headers={'Authorization': f'Bearer {token.token}'})
+    response = requests.get(url, headers={'Authorization': f'Bearer {token}'})
 
     if response.status_code != 200:
         logger.warning(f'Error on GET call to {url} - {response.status_code} - {response.text}')
